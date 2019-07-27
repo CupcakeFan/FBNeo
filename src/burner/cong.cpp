@@ -10,11 +10,11 @@ static TCHAR* GameConfigName()
 {
 	// Return the path of the config file for this game
 	static TCHAR szName[64];
-	if (NeoCDInfo_ID()) {
-		_stprintf(szName, _T("config/games/ngcd_%s.ini"), NeoCDInfo_Text(DRV_NAME));
-	} else {
+	//if (NeoCDInfo_ID()) {
+	//	_stprintf(szName, _T("config/games/ngcd_%s.ini"), NeoCDInfo_Text(DRV_NAME));
+	//} else {
 		_stprintf(szName, _T("config/games/%s.ini"), BurnDrvGetText(DRV_NAME));
-	}
+	//}
 
 	return szName;
 }

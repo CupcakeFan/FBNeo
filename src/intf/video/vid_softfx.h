@@ -10,9 +10,6 @@
 #ifdef SOFTFX_ENABLE_DIRECTX
  #include "vid_directx_support.h"
 #endif
-#ifdef SOFTFX_ENABLE_SDL
- #include <SDL.h>
-#endif
 
 #define FILTER_PLAIN				0
 #define FILTER_ADVMAME_SCALE_2X			1

@@ -6,8 +6,8 @@
 static int nInitedSubsytems = 0;
 
 static int nGameWidth = 0, nGameHeight = 0;			// screen size
-SDL_Surface* sdlsBlitFX[2] = {NULL, };				// The image surfaces
-SDL_Surface* sdlsFramebuf = NULL;
+//SDL_Surface* sdlsBlitFX[2] = {NULL, };				// The image surfaces
+//SDL_Surface* sdlsFramebuf = NULL;
 
 static int nSize;
 static int nUseBlitter;
@@ -18,20 +18,20 @@ static int nRotateGame = 0;
 
 static int PrimClear()
 {
-	SDL_FillRect(sdlsFramebuf, NULL, 0);
+/*	SDL_FillRect(sdlsFramebuf, NULL, 0);
 
 	if (nVidFullscreen) {
 		SDL_Flip(sdlsFramebuf);
 		SDL_FillRect(sdlsFramebuf, NULL, 0);
 	}
 
-	return 0;
+*/	return 0;
 }
 
 // Create a secondary DD surface for the screen
 static int BlitFXMakeSurf()
 {
-	sdlsBlitFX[0] = NULL;
+/*	sdlsBlitFX[0] = NULL;
 	sdlsBlitFX[1] = NULL;
 
 	// Try to allocate buffer in Video memory if required, always allocate one in System memory
@@ -52,12 +52,12 @@ static int BlitFXMakeSurf()
 
 	SDL_FillRect(sdlsBlitFX[1 ^ nDirectAccess], NULL, 0);
 
-	return 0;
+*/	return 0;
 }
 
 static int BlitFXExit()
 {
-	SDL_FreeSurface(sdlsBlitFX[0]);
+/*	SDL_FreeSurface(sdlsBlitFX[0]);
 	sdlsBlitFX[0] = NULL;
 	SDL_FreeSurface(sdlsBlitFX[1]);
 	sdlsBlitFX[1] = NULL;
@@ -66,12 +66,12 @@ static int BlitFXExit()
 
 	nRotateGame = 0;
 
-	return 0;
+*/	return 0;
 }
 
 static int BlitFXInit()
 {
-	if (nRotateGame & 1) {
+/*	if (nRotateGame & 1) {
 		nVidImageWidth = nGameHeight;
 		nVidImageHeight = nGameWidth;
 	} else {
@@ -101,24 +101,24 @@ static int BlitFXInit()
 		return 1;
 	}
 
-	return 0;
+*/	return 0;
 }
 
 static int Exit()
 {
-	BlitFXExit();
+/*	BlitFXExit();
 
 	if (!(nInitedSubsytems & SDL_INIT_VIDEO)) {
 		SDL_QuitSubSystem(SDL_INIT_VIDEO);
 	}
 	nInitedSubsytems = 0;
 
-	return 0;
+*/	return 0;
 }
 
 static int Init()
 {
-	nInitedSubsytems = SDL_WasInit(SDL_INIT_VIDEO);
+/*	nInitedSubsytems = SDL_WasInit(SDL_INIT_VIDEO);
 
 	if (!(nInitedSubsytems & SDL_INIT_VIDEO)) {
 		SDL_InitSubSystem(SDL_INIT_VIDEO);
@@ -178,7 +178,7 @@ static int Init()
 		}
 	}
 
-	return 0;
+*/	return 0;
 }
 
 static int vidScale(RECT* , int, int)
@@ -188,7 +188,7 @@ static int vidScale(RECT* , int, int)
 
 static int MemToSurf()
 {
-	VidSoftFXApplyEffectSDL(sdlsBlitFX[1 ^ nDirectAccess]);
+/*	VidSoftFXApplyEffectSDL(sdlsBlitFX[1 ^ nDirectAccess]);
 
 	if (nUseSys == 0 && nDirectAccess == 0) {
 
@@ -219,13 +219,13 @@ static int MemToSurf()
 		SDL_UnlockSurface(sdlsBlitFX[1]);
 	}
 
-	return 0;
+*/	return 0;
 }
 
 // Run one frame and render the screen
 static int Frame(bool bRedraw)						// bRedraw = 0
 {
-	if (pVidImage == NULL) {
+/*	if (pVidImage == NULL) {
 		return 1;
 	}
 
@@ -244,13 +244,13 @@ static int Frame(bool bRedraw)						// bRedraw = 0
 
 	MemToSurf();									// Copy the memory buffer to the directdraw buffer for later blitting
 
-	return 0;
+*/	return 0;
 }
 
 // Paint the BlitFX surface onto the primary surface
 static int Paint(int bValidate)
 {
-	SDL_Rect sdlrDest = { 0, 0, nGameWidth * nSize, nGameHeight * nSize };
+/*	SDL_Rect sdlrDest = { 0, 0, nGameWidth * nSize, nGameHeight * nSize };
 
 	if (bValidate & 2) {
 		MemToSurf();									// Copy the memory buffer to the directdraw buffer for later blitting
@@ -275,12 +275,12 @@ static int Paint(int bValidate)
 		SDL_UpdateRect(sdlsFramebuf, 0, 0, 0, 0);
 	}
 
-	return 0;
+*/	return 0;
 }
 
 static int GetSettings(InterfaceInfo* pInfo)
 {
-	TCHAR szString[MAX_PATH] = _T("");
+/*	TCHAR szString[MAX_PATH] = _T("");
 
 	_sntprintf(szString, MAX_PATH, _T("Prescaling using %s (%i× zoom)"), VidSoftFXGetEffect(nUseBlitter), nSize);
 	IntInfoAddStringModule(pInfo, szString);
@@ -289,7 +289,7 @@ static int GetSettings(InterfaceInfo* pInfo)
 		IntInfoAddStringModule(pInfo, _T("Using software rotation"));
 	}
 
-	return 0;
+*/	return 0;
 }
 
 // The Video Output plugin:

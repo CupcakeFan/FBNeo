@@ -1,90 +1,47 @@
-/*----------------
-Stuff to finish:
+/* ----------------
+ * Retry using SDL2
+ * Jul 2019 CF
+ * -----------------*/
 
-It wouldn't be a stretch of the imagination to think the whole of the sdl 'port' needs a redo but here are the main things wrong with this version:
-
-
-There is OSD of any kind which makes it hard to display info to the users.
-There are lots of problems with the audio output code.
-There are lots of problems with the opengl renderer
-probably many other things.
-------------------*/
 #include "burner.h"
 
-int nAppVirtualFps = 6000;			// App fps * 100
-bool bRunPause=0;
-bool bAlwaysProcessKeyboardInput=0;
-
-void CheckFirstTime()
-{
-
-}
-
-void ProcessCommandLine(int argc, char *argv[])
-{
-
-}
+int nAppVirtualFps = 0;
 
 #undef main
 
 int main(int argc, char *argv[])
 {
-	UINT32 i=0;
-
-	ConfigAppLoad();
-
-	CheckFirstTime(); // check for first time run
-
-	SDL_Init(SDL_INIT_TIMER|SDL_INIT_VIDEO);
-
+   int returnCode = 0;
+   
 	BurnLibInit();
 
-	SDL_WM_SetCaption( "FBA, SDL port.", "FBA, SDL port.");
-	SDL_ShowCursor(SDL_DISABLE);
-
-	if (argc < 2)
+	switch (argc)
 	{
-		int c;
-		printf ("Usage: fbasdl <romname>\n   ie: fbasdl uopoko\n Note: no extension.\n\n");
+      case 2:
+      {
+         uint32_t GameIdx = 0;
+         returnCode = BurnDrvGetDriverIndex(argv[1], &GameIdx);
+         if (0 == returnCode)
+         {
+            DrvInit(GameIdx, 0);
 
-		return 0;
+            //RunMessageLoop();
+
+            DrvExit();
+            MediaExit();
+         }
+      }
+      break;
+      
+      default:
+         printf ("Usage: fbnsdl <romname>\n   ie: fbnsdl uopoko\n Note: no extension.\n\n");
+      break;
 	}
 
-	if (argc == 2)
-	{
-		for (i = 0; i < nBurnDrvCount; i++) {
-			//nBurnDrvSelect[0] = i;
-			nBurnDrvActive = i;
-			if (strcmp(BurnDrvGetTextA(0), argv[1]) == 0) {
-				break;
-			}
-		}
-
-		if (i == nBurnDrvCount) {
-			printf("%s is not supported by FB Alpha.",argv[1]);
-			return 1;
-		}
-	}
-
-	bBurnUseASMCPUEmulation = 0;
-	bCheatsAllowed = false;
-	ConfigAppLoad();
-	ConfigAppSave();
-
-	DrvInit(i, 0);
-
-	RunMessageLoop();
-
-	DrvExit();
-	MediaExit();
-
-	ConfigAppSave();
 	BurnLibExit();
-	//SDL_Quit();
-
-	return 0;
+	
+	return returnCode;
 }
-
 
 /* const */ TCHAR* ANSIToTCHAR(const char* pszInString, TCHAR* pszOutString, int nOutSize)
 {
@@ -134,8 +91,10 @@ int main(int argc, char *argv[])
 #endif
 }
 
+bool bAlwaysProcessKeyboardInput=0;
 
 bool AppProcessKeyboardInput()
 {
 	return true;
 }
+

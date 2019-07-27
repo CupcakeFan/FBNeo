@@ -235,7 +235,8 @@ static inline void scale2x_32_def(scale2x_uint32* dst0, scale2x_uint32* dst1, co
 /***************************************************************************/
 /* Scale2x MMX implementation */
 
-#if defined(__GNUC__) && defined(__i386__)
+#if defined(__GNUC__)
+ #if defined(__i386__)
 
 /*
  * Apply the Scale2x effect at a single row.
@@ -919,6 +920,23 @@ static void scale2x_32_mmx(scale2x_uint32* dst0, scale2x_uint32* dst1, const sca
 	scale2x_32_mmx_single(dst1, src2, src1, src0, count);
 }
 
-#endif
+ #else // __x86_64__
+// TODO: Get the newer ASM functions from AdvanceMAME project
+//static inline void scale2x_8_mmx_single(scale2x_uint8* dst, const scale2x_uint8* src0, const scale2x_uint8* src1, const scale2x_uint8* src2, unsigned count)
+
+//static inline void scale2x_16_mmx_single(scale2x_uint16* dst, const scale2x_uint16* src0, const scale2x_uint16* src1, const scale2x_uint16* src2, unsigned count)
+
+//static inline void scale2x_32_mmx_single(scale2x_uint32* dst, const scale2x_uint32* src0, const scale2x_uint32* src1, const scale2x_uint32* src2, unsigned count)
+
+  #if 0
+   #define scale2x_8_mmx scale2x_8_def
+  #endif
+
+  #define scale2x_16_mmx scale2x_16_def
+
+  #define scale2x_32_mmx scale2x_32_def
+ 
+ #endif // __i386__
+#endif //__GNU__
 
 #endif

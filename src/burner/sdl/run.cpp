@@ -2,6 +2,7 @@
 #include "burner.h"
 
 bool bAltPause = 0;
+bool bRunPause = 0;
 
 int bAlwaysDrawFrames = 0;
 

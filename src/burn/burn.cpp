@@ -5,6 +5,7 @@
 #include "timer.h"
 #include "burn_sound.h"
 #include "driverlist.h"
+#include "burner.h"
 
 #ifndef __LIBRETRO__
 // filler function, used if the application is not printing debug messages
@@ -73,8 +74,11 @@ bool BurnCheckMMXSupport()
 
 	CPUID(1, nSignatureEAX, nSignatureEBX, nSignatureECX, nSignatureEDX);
 
+   printf("MMX: %X\n", nSignatureEDX);
+   
 	return (nSignatureEDX >> 23) & 1;						// bit 23 of edx indicates MMX support
 #else
+   printf("MMX: Not included in build\n");
 	return 0;
 #endif
 }
@@ -151,6 +155,34 @@ INT32 BurnGetZipName(char** pszName, UINT32 i)
 	*pszName = szFilename;
 
 	return 0;
+}
+
+INT32 BurnDrvGetDriverIndex(char *szName, UINT32 *idx)
+{
+   printf("DBG: %X / %s, %X\n", szName, szName, idx);
+   
+   printf("DBG: %d\n", nBurnDrvCount);
+   
+   if ((NULL != szName) && (NULL != idx))
+   {
+      nBurnDrvActive = 0;
+      *idx = nBurnDrvCount;
+      
+      while (nBurnDrvActive < nBurnDrvCount)
+      {
+         printf("Drv %3d/%3d: %s\n", nBurnDrvActive, nBurnDrvCount, BurnDrvGetTextA(DRV_NAME) );
+         if (0 == strcmp(szName, BurnDrvGetTextA(DRV_NAME)) )
+         {
+            *idx = nBurnDrvActive;
+            
+            return 0;
+         }
+         
+         nBurnDrvActive ++;
+      }
+   }
+   
+   return 1;
 }
 
 // ----------------------------------------------------------------------------

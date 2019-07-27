@@ -16,10 +16,6 @@ typedef char	TCHAR;
 typedef char	_TCHAR;
 #endif
 
-// WTF? This is a normal string function!
-// damn linux. :)
-#define wcslen(void)
-
 #define _tcslen     strlen
 #define _tcscpy     strcpy
 #define _tcsncpy    strncpy
@@ -38,6 +34,7 @@ typedef char	_TCHAR;
 #define _tcsnicmp   strncasecmp
 #define _tcstol     strtol
 #define _tcsstr     strstr
+#define _tcsrchr    strrchr
 
 #define _fgetts     fgets
 #define _fputts     fputs

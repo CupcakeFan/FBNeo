@@ -46,6 +46,7 @@ void ddt3x(unsigned char * src,  unsigned int srcPitch, unsigned char * dest, un
  #define scale2x_16_mmx internal_scale2x_16_mmx
  #define scale2x_32_mmx internal_scale2x_32_mmx
 #endif
+
 #include "scale3x.h"
 
 #if defined BUILD_X86_ASM
@@ -284,9 +285,9 @@ int VidSoftFXInit(int nBlitter, int nRotate)
 
 #if defined BUILD_X86_ASM
 		if (nVidImageDepth == 15) {
-			Init_2xSaIMMX(555);
+			//Init_2xSaIMMX(555);
 		} else {
-			Init_2xSaIMMX(565);
+			//Init_2xSaIMMX(565);
 		}
 #endif
 	}
@@ -303,10 +304,10 @@ int VidSoftFXInit(int nBlitter, int nRotate)
 
 #if defined BUILD_X86_ASM
 		if (nVidImageDepth == 15) {
-			Init_2xSaIMMX(555);
+			//Init_2xSaIMMX(555);
 		}
 		else if (nVidImageDepth == 16) {
-			Init_2xSaIMMX(565);
+			//Init_2xSaIMMX(565);
 		}
 		else {
 			Init_2xSaI(565, 32); // 32 bit
@@ -693,20 +694,20 @@ void VidSoftFXApplyEffect(unsigned char* ps, unsigned char* pd, int nPitch)
 		}
 #if defined BUILD_X86_ASM
 		case FILTER_2XPM_LQ: {
-			_2xpm_lq(ps, pd, (unsigned long)nSoftFXImagePitch, (unsigned long)nPitch, (unsigned long)nSoftFXImageWidth, (unsigned long)nSoftFXImageHeight, nVidImageDepth);
+			//_2xpm_lq(ps, pd, (unsigned long)nSoftFXImagePitch, (unsigned long)nPitch, (unsigned long)nSoftFXImageWidth, (unsigned long)nSoftFXImageHeight, nVidImageDepth);
 			break;			
 		}
 		case FILTER_2XPM_HQ: {
-			_2xpm_hq(ps, pd, (unsigned long)nSoftFXImagePitch, (unsigned long)nPitch, (unsigned long)nSoftFXImageWidth, (unsigned long)nSoftFXImageHeight, nVidImageDepth);
+			//_2xpm_hq(ps, pd, (unsigned long)nSoftFXImagePitch, (unsigned long)nPitch, (unsigned long)nSoftFXImageWidth, (unsigned long)nSoftFXImageHeight, nVidImageDepth);
 			break;			
 		}
 		case FILTER_EAGLE: {
 			int nWidth = nSoftFXImageWidth * 2;
 
-			_eagle_mmx16((unsigned long*)ps, (unsigned long*)ps, nWidth, (unsigned long*)pd, (unsigned long*)pd);
+			//_eagle_mmx16((unsigned long*)ps, (unsigned long*)ps, nWidth, (unsigned long*)pd, (unsigned long*)pd);
 			pd += nPitch - 2;
 			for (int y = 0; y < nSoftFXImageHeight; y++, ps += nSoftFXImagePitch, pd += 2 * nPitch) {
-				_eagle_mmx16((unsigned long*)ps, (unsigned long*)(ps + nSoftFXImagePitch), nWidth, (unsigned long*)pd, (unsigned long*)(pd + nPitch));
+				//_eagle_mmx16((unsigned long*)ps, (unsigned long*)(ps + nSoftFXImagePitch), nWidth, (unsigned long*)pd, (unsigned long*)(pd + nPitch));
 			}
 
 #ifdef __GNUC__
@@ -723,28 +724,28 @@ void VidSoftFXApplyEffect(unsigned char* ps, unsigned char* pd, int nPitch)
 		}
 		case FILTER_SUPEREAGLE: {											// Super Eagle blitter (15/16BPP only)
 			unsigned char* px = pSoftFXXBuffer + nSoftFXImagePitch;
-			_2xSaISuperEagleLine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
+			//_2xSaISuperEagleLine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
 			pd += nPitch;
 			for (int y = 0; y < nSoftFXImageHeight; y++, pd += (nPitch << 1), ps += nSoftFXImagePitch, px += nSoftFXImagePitch) {
-				_2xSaISuperEagleLine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
+				//_2xSaISuperEagleLine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
 			}
 			break;
 		}
 		case FILTER_2XSAI: {											// 2xSaI blitter (15/16BPP only)
 			unsigned char* px = pSoftFXXBuffer + nSoftFXImagePitch;
-			_2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
+			//_2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
 			pd += nPitch;
 			for (int y = 0; y < nSoftFXImageHeight; y++, pd += (nPitch << 1), ps += nSoftFXImagePitch, px += nSoftFXImagePitch) {
-				_2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
+				//_2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
 			}
 			break;
 		}
 		case FILTER_SUPER_2XSAI: {											// Super 2xSaI blitter (15/16BPP only)
 			unsigned char* px = pSoftFXXBuffer + nSoftFXImagePitch;
-			_2xSaISuper2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
+			//_2xSaISuper2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
 			pd += nPitch;
 			for (int y = 0; y < nSoftFXImageHeight; y++, pd += (nPitch << 1), ps += nSoftFXImagePitch, px += nSoftFXImagePitch) {
-				_2xSaISuper2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
+				//_2xSaISuper2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
 			}
 			break;
 		}
@@ -753,10 +754,10 @@ void VidSoftFXApplyEffect(unsigned char* ps, unsigned char* pd, int nPitch)
 				SuperEagle32(ps, nSoftFXImagePitch, NULL, pd, nPitch, nSoftFXImageWidth, nSoftFXImageHeight);
 			} else {
 				unsigned char* px = pSoftFXXBuffer + nSoftFXImagePitch;
-				_2xSaISuperEagleLine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
+				//_2xSaISuperEagleLine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
 				pd += nPitch;
 				for (int y = 0; y < nSoftFXImageHeight; y++, pd += (nPitch << 1), ps += nSoftFXImagePitch, px += nSoftFXImagePitch) {
-					_2xSaISuperEagleLine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
+					//_2xSaISuperEagleLine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
 				}
 			}
 			break;
@@ -766,10 +767,10 @@ void VidSoftFXApplyEffect(unsigned char* ps, unsigned char* pd, int nPitch)
 				_2xSaI32(ps, nSoftFXImagePitch, NULL, pd, nPitch, nSoftFXImageWidth, nSoftFXImageHeight);
 			} else {
 				unsigned char* px = pSoftFXXBuffer + nSoftFXImagePitch;
-				_2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
+				//_2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
 				pd += nPitch;
 				for (int y = 0; y < nSoftFXImageHeight; y++, pd += (nPitch << 1), ps += nSoftFXImagePitch, px += nSoftFXImagePitch) {
-					_2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
+					//_2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
 				}
 			}
 			break;
@@ -779,10 +780,10 @@ void VidSoftFXApplyEffect(unsigned char* ps, unsigned char* pd, int nPitch)
 				Super2xSaI32(ps, nSoftFXImagePitch, NULL, pd, nPitch, nSoftFXImageWidth, nSoftFXImageHeight);
 			} else {
 				unsigned char* px = pSoftFXXBuffer + nSoftFXImagePitch;
-				_2xSaISuper2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
+				//_2xSaISuper2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
 				pd += nPitch;
 				for (int y = 0; y < nSoftFXImageHeight; y++, pd += (nPitch << 1), ps += nSoftFXImagePitch, px += nSoftFXImagePitch) {
-					_2xSaISuper2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
+					//_2xSaISuper2xSaILine(ps, px, nSoftFXImagePitch, nSoftFXImageWidth - 1, pd, nPitch, 0);
 				}
 			}
 			break;
@@ -798,8 +799,8 @@ void VidSoftFXApplyEffect(unsigned char* ps, unsigned char* pd, int nPitch)
 			if (nVidImageDepth == 15) mask = 0x3DEF3DEF3DEF3DEFLL;
 			
 			for (int y = 0; y < nSoftFXImageHeight; y++) {
-				superscale_line(src0, src1, src2, dst0, nSoftFXImageWidth, &mask);
-				superscale_line(src2, src1, src0, dst1, nSoftFXImageWidth, &mask);
+				//superscale_line(src0, src1, src2, dst0, nSoftFXImageWidth, &mask);
+				//superscale_line(src2, src1, src0, dst1, nSoftFXImageWidth, &mask);
 
 				src0 = src1;
 				src1 = src2;
@@ -830,8 +831,8 @@ void VidSoftFXApplyEffect(unsigned char* ps, unsigned char* pd, int nPitch)
 			if (nVidImageDepth == 15) mask = 0x3DEF3DEF3DEF3DEFLL;
 			
 			for (int y = 0; y < nSoftFXImageHeight; y++) {
-				superscale_line(src0, src1, src2, dst0, nSoftFXImageWidth, &mask);
-				superscale_line_75(src2, src1, src0, dst1, nSoftFXImageWidth, &mask);
+				//superscale_line(src0, src1, src2, dst0, nSoftFXImageWidth, &mask);
+				//superscale_line_75(src2, src1, src0, dst1, nSoftFXImageWidth, &mask);
 
 				src0 = src1;
 				src1 = src2;
@@ -852,15 +853,15 @@ void VidSoftFXApplyEffect(unsigned char* ps, unsigned char* pd, int nPitch)
 			break;
 		}
 		case FILTER_HQ2X: {											// hq2x filter (16BPP -> 32BPP)
-			hq2x_32(ps, pd, nSoftFXImageWidth, nSoftFXImageHeight, nPitch);
+			//hq2x_32(ps, pd, nSoftFXImageWidth, nSoftFXImageHeight, nPitch);
 			break;
 		}
 		case FILTER_HQ3X: {											// hq3x filter (16BPP -> 32BPP)
-			hq3x_32(ps, pd, nSoftFXImageWidth, nSoftFXImageHeight, nPitch);
+			//hq3x_32(ps, pd, nSoftFXImageWidth, nSoftFXImageHeight, nPitch);
 			break;
 		}
 		case FILTER_HQ4X: {											// hq4x filter (16BPP -> 32BPP)
-			hq4x_32(ps, pd, nSoftFXImageWidth, nSoftFXImageHeight, nPitch);
+			//hq4x_32(ps, pd, nSoftFXImageWidth, nSoftFXImageHeight, nPitch);
 			break;
 		}
 #endif

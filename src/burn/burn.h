@@ -15,7 +15,11 @@
 
 #if !defined (_MSC_VER) && defined(FASTCALL)
  #undef __fastcall
+#if defined (__i386__)
  #define __fastcall __attribute__((fastcall))
+#else
+ #define __fastcall
+#endif
 #endif
 
 #ifndef MAX_PATH
@@ -356,6 +360,7 @@ void BurnDumpLoad_(char *filename, UINT8 *buffer, INT32 bufsize);
 TCHAR* BurnDrvGetText(UINT32 i);
 char* BurnDrvGetTextA(UINT32 i);
 
+INT32 BurnDrvGetDriverIndex(char *szName, UINT32 *idx);
 INT32 BurnDrvGetZipName(char** pszName, UINT32 i);
 INT32 BurnDrvGetRomInfo(struct BurnRomInfo *pri, UINT32 i);
 INT32 BurnDrvGetRomName(char** pszName, UINT32 i, INT32 nAka);

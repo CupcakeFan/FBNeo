@@ -21,7 +21,7 @@ Updates:
 struct isowavTRACK_DATA { 
 	char Control; 
 	char TrackNumber; 
-	char Address[4]; 
+	unsigned char Address[4]; 
 	TCHAR* Filename; 
 };
 
@@ -39,9 +39,9 @@ static int    isowavLBA      = 0;
 
 // -----------------------------------------------------------------------------
 
-static const char* isowavLBAToMSF(const int LBA)
+static const unsigned char* isowavLBAToMSF(const UINT32 LBA)
 {
-	static char address[4];
+	static unsigned char address[4];
 
 	address[0] = 0;
 	address[1] = LBA                    / CD_FRAMES_MINUTE;
@@ -51,9 +51,9 @@ static const char* isowavLBAToMSF(const int LBA)
 	return address;
 }
 
-static int isowavMSFToLBA(const char* address)
+static UINT32 isowavMSFToLBA(const unsigned char* address)
 {
-	int LBA;
+	UINT32 LBA;
 
 	LBA  = address[3];
 	LBA += address[2] * CD_FRAMES_SECOND;
@@ -72,7 +72,7 @@ static int isowavGetTrackSizes()
 
 	for (int i = isowavTOC->FirstTrack - 1; i < isowavTOC->LastTrack; i++) {
 
-		const char* address;
+		const unsigned char* address;
 
 		if (isowavTOC->TrackData[i].Control & 4) {
 
@@ -315,7 +315,7 @@ static int isowavParseCueFile()
 
 // -----------------------------------------------------------------------------
 
-static int isowavExit()
+static INT32 isowavExit()
 {
 	wav_exit();
 
@@ -339,7 +339,7 @@ static int isowavExit()
 	return 0;
 }
 
-static int isowavInit()
+static INT32 isowavInit()
 {
 	wav_exit();
 
@@ -391,19 +391,24 @@ TCHAR* GetIsoPath()
 	return NULL;
 }
 
-static int isowavStop()
+static void isowavCloseFile()
 {
-	wav_stop();
-
 	if (isowavFile) {
 		fclose(isowavFile);
 		isowavFile = NULL;
 	}
+}
+
+static INT32 isowavStop()
+{
+	wav_stop();
+   isowavCloseFile();
+
 	CDEmuStatus = idle;
 	return 0;
 }
 
-static int isowavPlayLBA(int LBA)
+static INT32 isowavPlayLBA(UINT32 LBA)
 {
 	isowavLBA = LBA;
 
@@ -450,14 +455,14 @@ static int isowavPlayLBA(int LBA)
 	return 0;
 }
 
-static int isowavPlay(unsigned char M, unsigned char S, unsigned char F)
+static INT32 isowavPlay(unsigned char M, unsigned char S, unsigned char F)
 {
-	const char address[] = { 0, M, S, F };
+	const unsigned char address[] = { 0, M, S, F };
 
 	return isowavPlayLBA(isowavMSFToLBA(address));
 }
 
-static int isowavLoadSector(int LBA, char* pBuffer)
+static INT32 isowavLoadSector(INT32 LBA, char* pBuffer)
 {
 	LBA += CD_FRAMES_PREGAP;
 
@@ -508,7 +513,7 @@ static int isowavLoadSector(int LBA, char* pBuffer)
 	return isowavLBA - CD_FRAMES_PREGAP;
 }
 
-static unsigned char* isowavReadTOC(int track)
+static unsigned char* isowavReadTOC(INT32 track)
 {
 	static unsigned char TOCEntry[4];
 
@@ -547,8 +552,8 @@ static unsigned char* isowavReadQChannel()
 	switch (CDEmuStatus) {
 		case reading:
 		case playing: {
-			const char* AddressAbs = isowavLBAToMSF(isowavLBA);
-			const char* AddressRel = isowavLBAToMSF(isowavLBA - isowavMSFToLBA(isowavTOC->TrackData[isowavTrack].Address));
+			const unsigned char* AddressAbs = isowavLBAToMSF(isowavLBA);
+			const unsigned char* AddressRel = isowavLBAToMSF(isowavLBA - isowavMSFToLBA(isowavTOC->TrackData[isowavTrack].Address));
 		
 			QChannelData[0] = isowavTOC->TrackData[isowavTrack].TrackNumber;
 		
@@ -575,7 +580,7 @@ static unsigned char* isowavReadQChannel()
 	return QChannelData;
 }
 
-static int isowavGetSoundBuffer(short* /*buffer*/, int /*samples*/)
+static INT32 isowavGetSoundBuffer(INT16 * /*buffer*/, INT32 /*samples*/)
 {
 	// ---------------------------------------------------------------------
 	// TODO: 
@@ -587,9 +592,36 @@ static int isowavGetSoundBuffer(short* /*buffer*/, int /*samples*/)
 	return 0;
 }
 
+static INT32 isowavScan(INT32 nAction, INT32 *pnMin)
+{
+	if (nAction & ACB_VOLATILE) {
+		SCAN_VAR(CDEmuStatus);
+		SCAN_VAR(isowavTrack);
+		SCAN_VAR(isowavLBA);
+	}
+
+	if (nAction & ACB_WRITE) {
+		isowavCloseFile();
+	}
+
+	return 0;
+}
+
 static int isowavGetSettings(InterfaceInfo* /*pInfo*/)
 {
 	return 0;
 }
 
-struct CDEmuDo isowavDo = { isowavExit, isowavInit, isowavStop, isowavPlay, isowavLoadSector, isowavReadTOC, isowavReadQChannel, isowavGetSoundBuffer, isowavGetSettings, _T("cue/iso/wav CD emulation") };
+struct CDEmuDo isowavDo = { 
+   isowavExit, 
+   isowavInit, 
+   isowavStop, 
+   isowavPlay, 
+   isowavLoadSector, 
+   isowavReadTOC, 
+   isowavReadQChannel, 
+   isowavGetSoundBuffer, 
+   isowavScan, 
+   isowavGetSettings, 
+   _T("cue/iso/wav CD emulation") 
+};

@@ -1,6 +1,4 @@
 // Module for input using SDL
-#include <SDL/SDL.h>
-
 #include "burner.h"
 #include "inp_sdl_keys.h"
 
@@ -9,25 +7,25 @@
 static int FBKtoSDL[512];
 
 static int nInitedSubsytems = 0;
-static SDL_Joystick* JoyList[MAX_JOYSTICKS];
+//static SDL_Joystick* JoyList[MAX_JOYSTICKS];
 static int* JoyPrevAxes = NULL;
 static int nJoystickCount = 0;						// Number of joysticks connected to this machine
 
 // Sets up one Joystick (for example the range of the joystick's axes)
 static int SDLinpJoystickInit(int i)
 {
-	JoyList[i] = SDL_JoystickOpen(i);
+//	JoyList[i] = SDL_JoystickOpen(i);
 	return 0;
 }
 
 // Set up the keyboard
 static int SDLinpKeyboardInit()
 {
-	for (int i = 0; i < 512; i++) {
+/*	for (int i = 0; i < 512; i++) {
 		if (SDLtoFBK[i] > 0)
 			FBKtoSDL[SDLtoFBK[i]] = i;
 	}
-
+*/
 	return 0;
 }
 
@@ -39,8 +37,8 @@ static int SDLinpMouseInit()
 
 int SDLinpSetCooperativeLevel(bool bExclusive, bool /*bForeGround*/)
 {
-	SDL_WM_GrabInput((bDrvOkay && (bExclusive || nVidFullscreen)) ? SDL_GRAB_ON : SDL_GRAB_OFF);
-	SDL_ShowCursor((bDrvOkay && (bExclusive || nVidFullscreen)) ? SDL_DISABLE : SDL_ENABLE);
+//	SDL_WM_GrabInput((bDrvOkay && (bExclusive || nVidFullscreen)) ? SDL_GRAB_ON : SDL_GRAB_OFF);
+//	SDL_ShowCursor((bDrvOkay && (bExclusive || nVidFullscreen)) ? SDL_DISABLE : SDL_ENABLE);
 
 	return 0;
 }
@@ -48,7 +46,7 @@ int SDLinpSetCooperativeLevel(bool bExclusive, bool /*bForeGround*/)
 int SDLinpExit()
 {
 	// Close all joysticks
-	for (int i = 0; i < MAX_JOYSTICKS; i++) {
+/*	for (int i = 0; i < MAX_JOYSTICKS; i++) {
 		if (JoyList[i]) {
 			SDL_JoystickClose(JoyList[i]);
 			JoyList[i] = NULL;
@@ -66,12 +64,12 @@ int SDLinpExit()
 
 	nInitedSubsytems = 0;
 
-	return 0;
+*/	return 0;
 }
 
 int SDLinpInit()
 {
-	int nSize;
+/*	int nSize;
 
 	SDLinpExit();
 
@@ -103,7 +101,7 @@ int SDLinpInit()
 	// Set up the mouse
 	SDLinpMouseInit();
 
-	return 0;
+*/	return 0;
 }
 
 static unsigned char bKeyboardRead = 0;
@@ -120,7 +118,7 @@ static struct { unsigned char buttons; int xdelta; int ydelta; } SDLinpMouseStat
 int SDLinpStart()
 {
 	// Update SDL event queue
-	SDL_PumpEvents();
+/*	SDL_PumpEvents();
 
 	// Keyboard not read this frame
 	bKeyboardRead = 0;
@@ -131,13 +129,13 @@ int SDLinpStart()
 	// Mouse not read this frame
 	bMouseRead = 0;
 
-	return 0;
+*/	return 0;
 }
 
 // Read one of the joysticks
 static int ReadJoystick()
 {
-	if (bJoystickRead) {
+/*	if (bJoystickRead) {
 		return 0;
 	}
 
@@ -146,13 +144,13 @@ static int ReadJoystick()
 	// All joysticks have been Read this frame
 	bJoystickRead = 1;
 
-	return 0;
+*/	return 0;
 }
 
 // Read one joystick axis
 int SDLinpJoyAxis(int i, int nAxis)
 {
-	if (i < 0 || i >= nJoystickCount) {				// This joystick number isn't connected
+/*	if (i < 0 || i >= nJoystickCount) {				// This joystick number isn't connected
 		return 0;
 	}
 
@@ -164,13 +162,13 @@ int SDLinpJoyAxis(int i, int nAxis)
 		return 0;
 	}
 
-	return SDL_JoystickGetAxis(JoyList[i], nAxis) << 1;
+*/	return 0; //SDL_JoystickGetAxis(JoyList[i], nAxis) << 1;
 }
 
 // Read the keyboard
 static int ReadKeyboard()
 {
-	int numkeys;
+/*	int numkeys;
 
 	if (bKeyboardRead) {							// already read this frame - ready to go
 		return 0;
@@ -184,12 +182,12 @@ static int ReadKeyboard()
 	// The keyboard has been successfully Read this frame
 	bKeyboardRead = 1;
 
-	return 0;
+*/	return 0;
 }
 
 static int ReadMouse()
 {
-	if (bMouseRead) {
+/*	if (bMouseRead) {
 		return 0;
 	}
 
@@ -197,13 +195,13 @@ static int ReadMouse()
 
 	bMouseRead = 1;
 
-	return 0;
+*/	return 0;
 }
 
 // Read one mouse axis
 int SDLinpMouseAxis(int i, int nAxis)
 {
-	if (i < 0 || i >= 1) {									// Only the system mouse is supported by SDL
+/*	if (i < 0 || i >= 1) {									// Only the system mouse is supported by SDL
 		return 0;
 	}
 
@@ -214,13 +212,13 @@ int SDLinpMouseAxis(int i, int nAxis)
 			return SDLinpMouseState.ydelta;
 	}
 
-	return 0;
+*/	return 0;
 }
 
 // Check a subcode (the 40xx bit in 4001, 4102 etc) for a joystick input code
 static int JoystickState(int i, int nSubCode)
 {
-	if (i < 0 || i >= nJoystickCount) {							// This joystick isn't connected
+/*	if (i < 0 || i >= nJoystickCount) {							// This joystick isn't connected
 		return 0;
 	}
 
@@ -235,7 +233,7 @@ static int JoystickState(int i, int nSubCode)
 			return 0;
 		}
 
-		switch (nSubCode) {
+      switch (nSubCode) {
 			case 0x00: return SDL_JoystickGetAxis(JoyList[i], 0) < -DEADZONE;		// Left
 			case 0x01: return SDL_JoystickGetAxis(JoyList[i], 0) > DEADZONE;		// Right
 			case 0x02: return SDL_JoystickGetAxis(JoyList[i], 1) < -DEADZONE;		// Up
@@ -255,7 +253,7 @@ static int JoystickState(int i, int nSubCode)
 		}
 	}
 	if (nSubCode < 0x20) {										// POV hat controls
-		if (SDL_JoystickNumHats(JoyList[i]) <= ((nSubCode & 0x0F) >> 2)) {
+      if (SDL_JoystickNumHats(JoyList[i]) <= ((nSubCode & 0x0F) >> 2)) {
 			return 0;
 		}
 
@@ -279,13 +277,13 @@ static int JoystickState(int i, int nSubCode)
 		return SDL_JoystickGetButton(JoyList[i], nSubCode & 0x7F);
 	}
 
-	return 0;
+*/	return 0;
 }
 
 // Check a subcode (the 80xx bit in 8001, 8102 etc) for a mouse input code
 static int CheckMouseState(unsigned int nSubCode)
 {
-	switch (nSubCode & 0x7F) {
+/*	switch (nSubCode & 0x7F) {
 		case 0:
 			return (SDLinpMouseState.buttons & SDL_BUTTON(SDL_BUTTON_LEFT)) != 0;
 		case 1:
@@ -294,13 +292,13 @@ static int CheckMouseState(unsigned int nSubCode)
 			return (SDLinpMouseState.buttons & SDL_BUTTON(SDL_BUTTON_MIDDLE)) != 0;
 	}
 
-	return 0;
+*/	return 0;
 }
 
 // Get the state (pressed = 1, not pressed = 0) of a particular input code
 int SDLinpState(int nCode)
 {
-	if (nCode < 0) {
+/*	if (nCode < 0) {
 		return 0;
 	}
 
@@ -334,14 +332,14 @@ int SDLinpState(int nCode)
 		return CheckMouseState(nCode & 0xFF);
 	}
 
-	return 0;
+*/	return 0;
 }
 
 // This function finds which key is pressed, and returns its code
 int SDLinpFind(bool CreateBaseline)
 {
 	int nRetVal = -1;										// assume nothing pressed
-
+/*
 	// check if any keyboard keys are pressed
 	if (ReadKeyboard() == 0) {
 		for (int i = 0; i < 0x100; i++) {
@@ -417,13 +415,13 @@ End:
 			}
 		}
 	}
-
+*/
 	return nRetVal;
 }
 
 int SDLinpGetControlName(int nCode, TCHAR* pszDeviceName, TCHAR* pszControlName)
 {
-	if (pszDeviceName) {
+/*	if (pszDeviceName) {
 		pszDeviceName[0] = _T('\0');
 	}
 	if (pszControlName) {
@@ -458,7 +456,7 @@ int SDLinpGetControlName(int nCode, TCHAR* pszDeviceName, TCHAR* pszControlName)
 		}
 	}
 
-	return 0;
+*/	return 0;
 }
 
 struct InputInOut InputInOutSDL = { SDLinpInit, SDLinpExit, SDLinpSetCooperativeLevel, SDLinpStart, SDLinpState, SDLinpJoyAxis, SDLinpMouseAxis, SDLinpFind, SDLinpGetControlName, NULL, _T("SDL input") };

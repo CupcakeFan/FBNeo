@@ -55,6 +55,9 @@ static int DrvLoadRom(unsigned char* Dest, int* pnWrote, int i)
 
 int DrvInit(int nDrvNum, bool bRestore)
 {
+   printf("DRV: Init %d, %d", nDrvNum, bRestore);
+
+/*
 	DrvExit();						// Make sure exitted
 	MediaExit();
 
@@ -89,7 +92,7 @@ int DrvInit(int nDrvNum, bool bRestore)
 
 	// Reset the speed throttling code, so we don't 'jump' after the load
 	RunReset();
-	return 0;
+*/	return 0;
 }
 
 int DrvInitCallback()
@@ -99,7 +102,7 @@ int DrvInitCallback()
 
 int DrvExit()
 {
-	if (bDrvOkay) {
+/*	if (bDrvOkay) {
 		if (nBurnDrvSelect[0] < nBurnDrvCount) {
 			if (bSaveRAM) {
 
@@ -118,7 +121,7 @@ int DrvExit()
 	bDrvOkay = 0;					// Stop using the BurnDrv functions
 	nBurnDrvSelect[0] = ~0U;			// no driver selected
 
-	return 0;
+*/	return 0;
 }
 
 int ProgressUpdateBurner(double dProgress, const TCHAR* pszText, bool bAbs)

@@ -50,6 +50,7 @@ int MediaInit()
 
 int MediaExit()
 {
+   /*
 	nBurnSoundRate = 0;		// Blank sound
 	pBurnSoundOut = NULL;
 
@@ -60,7 +61,7 @@ int MediaExit()
 	InputExit();
 
 	//ScrnExit();			// Exit the Scrn Window
-
+*/
 	return 0;
 }
  

@@ -1,4 +1,4 @@
-#include <SDL/SDL.h>
+#include <SDL2/SDL.h>
 
 // defines to override various #ifndef _WIN32
 typedef struct tagRECT {
@@ -59,7 +59,7 @@ int InputExit();
 int InputMake(bool bCopy);
 
 //TODO:
-#define szAppBurnVer 1
+#define szAppBurnVer "1"
 
 //stringset.cpp
 class StringSet {

@@ -15,7 +15,7 @@ static int nInitedSubsytems = 0;
 
 static int nGamesWidth = 0, nGamesHeight = 0; // screen size
 
-static SDL_Surface *screen=NULL;
+//static SDL_Surface *screen=NULL;
 static unsigned char *texture = NULL;
 static unsigned char *gamescreen=NULL;
 
@@ -44,13 +44,13 @@ static int BlitFXMakeSurf()
 
 static int BlitFXExit()
 {
-	SDL_FreeSurface(screen);
+/*	SDL_FreeSurface(screen);
 
 	free(texture);
 	free(gamescreen);
 	nRotateGame = 0;
 
-	return 0;
+*/	return 0;
 }
 static int GetTextureSize(int Size)
 {
@@ -65,7 +65,7 @@ static int GetTextureSize(int Size)
 
 static int BlitFXInit()
 {
-	int nMemLen = 0;
+/*	int nMemLen = 0;
 
 	nVidImageDepth = bDrvOkay ? 16 : 32;
 	nVidImageBPP = (nVidImageDepth + 7) >> 3;
@@ -103,12 +103,12 @@ static int BlitFXInit()
 		return 1;
 	}
 
-	return 0;
+*/	return 0;
 }
 
 static int Exit()
 {
-	BlitFXExit();
+/*	BlitFXExit();
 
 	if (!(nInitedSubsytems & SDL_INIT_VIDEO)) {
 		SDL_QuitSubSystem(SDL_INIT_VIDEO);
@@ -116,12 +116,12 @@ static int Exit()
 
 	nInitedSubsytems = 0;
 
-	return 0;
+*/	return 0;
 }
 
 void init_gl()
 {
-	const unsigned char *glVersion;
+/*	const unsigned char *glVersion;
 	int isGL12 = GL_FALSE;
 
 	printf("opengl config\n");
@@ -160,12 +160,12 @@ void init_gl()
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 
-	printf("opengl config done . . . \n");
+*/	printf("opengl config done . . . \n");
 }
 
 int VidSScaleImage(RECT* pRect)
 {
-	int nScrnWidth, nScrnHeight;
+/*	int nScrnWidth, nScrnHeight;
 
 	int nGameAspectX = 4, nGameAspectY = 3;
 	int nWidth = pRect->right - pRect->left;
@@ -209,12 +209,12 @@ int VidSScaleImage(RECT* pRect)
 	pRect->top -= nHeight / 2;
 	pRect->bottom = pRect->top + nHeight;
 
-	return 0;
+*/	return 0;
 }
 
 static int Init()
 {
-	nInitedSubsytems = SDL_WasInit(SDL_INIT_VIDEO);
+/*	nInitedSubsytems = SDL_WasInit(SDL_INIT_VIDEO);
 
 	if (!(nInitedSubsytems & SDL_INIT_VIDEO)) {
 		SDL_InitSubSystem(SDL_INIT_VIDEO);
@@ -271,13 +271,13 @@ static int Init()
 	// Init opengl
 	init_gl();
 
-	return 0;
+*/	return 0;
 }
 
 // Run one frame and render the screen
 static int Frame(bool bRedraw) // bRedraw = 0
 {
-	if (pVidImage == NULL) {
+/*	if (pVidImage == NULL) {
 		return 1;
 	}
 
@@ -294,12 +294,12 @@ static int Frame(bool bRedraw) // bRedraw = 0
 			pVidTransCallback();
 	}
 
-	return 0;
+*/	return 0;
 }
 
 static void SurfToTex()
 {
-	int nVidPitch = nTextureWidth * nVidImageBPP;
+/*	int nVidPitch = nTextureWidth * nVidImageBPP;
 
 	unsigned char *ps = (unsigned char *)gamescreen;
 	unsigned char *pd = (unsigned char *)texture;
@@ -312,11 +312,12 @@ static void SurfToTex()
 
 	glTexImage2D(GL_TEXTURE_2D, 0, GL_RGB, nTextureWidth, nTextureHeight, 0,
 		     GL_RGB, texture_type, texture);
+*/
 }
 
 static void TexToQuad()
 {
-	glBegin(GL_QUADS);
+/*	glBegin(GL_QUADS);
 	glTexCoord2f(0, 0);
 	glVertex2i(0, 0);
 	glTexCoord2f(0, 1);
@@ -327,11 +328,13 @@ static void TexToQuad()
 	glVertex2i(nTextureWidth, 0);
 	glEnd();
 	glFinish();
- }
+*/ 
+}
 
 // Paint the BlitFX surface onto the primary surface
 static int Paint(int bValidate)
 {
+/*
 #ifdef frame_timer
 	timeval start, end;
 	time_t sec;
@@ -353,7 +356,7 @@ static int Paint(int bValidate)
 	printf("Elapsed time : %ld.%ld\n", sec, usec);
 #endif
 
-	return 0;
+*/	return 0;
 }
 
 static int vidScale(RECT *, int, int)
@@ -364,7 +367,7 @@ static int vidScale(RECT *, int, int)
 
 static int GetSettings(InterfaceInfo *pInfo)
 {
-	TCHAR szString[MAX_PATH] = _T("");
+/*	TCHAR szString[MAX_PATH] = _T("");
 
 	_sntprintf(szString, MAX_PATH, _T("Prescaling using %s (%i× zoom)"),
 					VidSoftFXGetEffect(nUseBlitter), nSize);
@@ -374,7 +377,7 @@ static int GetSettings(InterfaceInfo *pInfo)
 		IntInfoAddStringModule(pInfo, _T("Using software rotation"));
 	}
 
-	return 0;
+*/	return 0;
 }
 
 // The Video Output plugin:
