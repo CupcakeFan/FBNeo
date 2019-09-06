@@ -1,12 +1,25 @@
 // Galaga & Dig-Dug driver for FB Alpha, based on the MAME driver by Nicola Salmoria & previous work by Martin Scragg, Mirko Buffoni, Aaron Giles
 // Dig Dug added July 27, 2015 - dink
 // Xevious added April 22, 2019 - CupcakeFan
+// Bosconian added August 8, 2019 - CupcakeFan
 
 #include "tiles_generic.h"
 #include "z80_intf.h"
 #include "namco_snd.h"
 #include "samples.h"
 #include "earom.h"
+
+#define DEBUG_DRV 1
+#define DBG_DIP   0
+#define DBG_INFO  DEBUG_DRV
+#define DBG_50XX  0
+#define DBG_51XX  0
+
+#define DBGPRINT_DIP if(DBG_DIP&&DEBUG_DRV)
+#define DBGPRINT_INFO if(DBG_INFO&&DEBUG_DRV)
+#define DBGPRINT_50XX if(DBG_50XX&&DEBUG_DRV)
+#define DBGPRINT_50XX_ERR if(DBG_50XX&&DEBUG_DRV)
+#define DBGPRINT_51XX_ERR if(DBG_51XX&&DEBUG_DRV)
 
 enum
 {
@@ -245,13 +258,35 @@ struct Namco_Sprite_Params
 struct N06XX_Def
 {
 	UINT8 customCommand;
-	UINT8 CPU1FireNMI;
+	UINT8 CPUFireNMI;
 	UINT8 buffer[N06XX_BUF_SIZE];
+};
+
+#define N50XX_BUF_SIZE       16
+
+struct N50XX_ScoreRegs
+{
+   UINT32 score;
+   UINT32 bonus;
 };
 
 struct N50XX_Def
 {
-	UINT8 input;
+	UINT8 input[N50XX_BUF_SIZE];
+   struct N50XX_ScoreRegs *player;
+   struct N50XX_ScoreRegs player1;
+   struct N50XX_ScoreRegs player2;
+   struct N50XX_BonusRegs
+   {
+      UINT32   first;
+      UINT32   interval;
+   } bonus;
+   UINT32 hiScore;
+   INT32 incdec;
+   union {
+      UINT32 word;
+      UINT8  bytes[4];
+   } code;
 };
 
 struct N51XX_Def
@@ -316,6 +351,7 @@ struct Machine_Config_Def
 	INT32                         (*reset)(void);
 	struct Namco_Custom_RW_Entry  *customRWTable;
 	struct N54XX_Sample_Info_Def  *n54xxSampleList;
+   struct NCustom_Def            *customIC[NAMCO_BRD_CPU_COUNT];
 };
 
 enum GAMES_ON_MACHINE
@@ -323,6 +359,7 @@ enum GAMES_ON_MACHINE
 	NAMCO_GALAGA = 0,
 	NAMCO_DIGDUG,
 	NAMCO_XEVIOUS,
+   NAMCO_BOSCONIAN,
 	NAMCO_TOTAL_GAMES
 };
 
@@ -421,6 +458,8 @@ static INT32 namcoInitBoard(void)
 
 	namcoMemIndex();
 
+   DBGPRINT_INFO{bprintf(PRINT_NORMAL, _T("Board Init\n\r"));}
+
 	return namcoLoadGameROMS();
 }
 
@@ -500,6 +539,8 @@ static INT32 namcoMemIndex(void)
 	struct Memory_Map_Def *memoryMapEntry = machine.config->memMapTable;
 	if (NULL == memoryMapEntry) return 1;
 
+   DBGPRINT_INFO{bprintf(PRINT_NORMAL, _T("Alloc mem\n\r"));}
+
 	UINT8 *next = memory.all.start;
 
 	UINT32 i = 0;
@@ -546,6 +587,8 @@ static INT32 namcoLoadGameROMS(void)
 	UINT32 tableSize = machine.config->sizeOfRomLayoutTable;
 	UINT32 tempSize = machine.config->tempRomSize;
 	INT32 retVal = 1;
+   
+   DBGPRINT_INFO{bprintf(PRINT_NORMAL, _T("Loading ROMs\n\r"));}
 
 	if (tempSize) tempRom = (UINT8 *)BurnMalloc(tempSize);
 
@@ -558,9 +601,15 @@ static INT32 namcoLoadGameROMS(void)
 		for (UINT32 idx = 0; ((idx < tableSize) && (0 == retVal)); idx ++)
 		{
 			retVal = BurnLoadRom(*(romEntry->address) + romEntry->offset, idx, 1);
-			if ((0 == retVal) && (NULL != romEntry->postProcessing))
+
+         DBGPRINT_INFO{bprintf(PRINT_NORMAL, _T("Rom Load %d : %d\n\r"), idx, retVal);}
+
+			if ((0 == retVal) && (NULL != romEntry->postProcessing)) {
 				retVal = romEntry->postProcessing();
 
+         DBGPRINT_INFO{bprintf(PRINT_NORMAL, _T("  Rom PP %d : %d\n\r"), idx, retVal);}
+         }
+      
 			romEntry ++;
 		}
 
@@ -571,10 +620,43 @@ static INT32 namcoLoadGameROMS(void)
 }
 
 /* derived from the latest emulation contained in MAME
+
+    Galaga writes:
+        control = 10: 000 R 0000: reset to FF at startup
+        control = 71: 011 R 0001: n51xx-read 3 bytes, control = 10
+        control = A1: 101 w 0001: n51xx-write 4 bytes, control = 10
+        control = A8: 101 w 1000: n54xx-write 12 bytes, control = 10
+
+    Xevious writes:
+        control = 10: 000 R 0000: reset to FF at startup
+        control = A1: 101 w 0001: n51xx-write 6 bytes, control = 10
+        control = 71: 011 R 0001: n51xx-read 3 bytes, control = 10
+        control = 64: 011 w 0100: n50xx-write 1 byte, control = 10
+        control = 74: 011 R 0100: n50xx-read 4 bytes, control = 10
+        control = 68: 011 w 1000: n54xx-write 7 bytes, control = 10
+
+    Dig Dug writes:
+        control = 10: 000 R 0000: reset to FF at startup
+        control = A1: 101 w 0001: n51xx-write 3 bytes, control = 10
+        control = 71: 011 R 0001: n51xx-read 3 bytes, control = 10
+        control = D2: 110 R 0010: n53xx-read 2 bytes, control = 10
+
+    Bosco writes:
+        control = 10: 000 R 0000; reset to FF at startup
+        control = C8: 110 w 1000: n54xx-write 17 bytes, control = 10
+        control = 61: 011 w 0001: n51xx-write 1 byte, control = 10
+        control = 71: 011 R 0001: n51xx-read 3 bytes, control = 10
+        control = 94: 100 R 0100: n50xx-read 4 bytes, control = 10
+        control = 64: 011 w 0100: n50xx-write 1 byte, control = 10
+        control = 84: 100 w 0100: n50xx-write 5 bytes, control = 10
+
+        control = 34: 001 R 0100: ???-write 1 byte, control = 10
  */
 static void namcoCustomReset(void)
 {
 	memset(&namcoCustomIC, 0, sizeof(struct NCustom_Def));
+   
+   namcoCustomIC.n50xx.player = &namcoCustomIC.n50xx.player1;
 }
 
 static void namco51xxReset(void)
@@ -763,18 +845,81 @@ static UINT8 namco50xxRead(UINT8 offset, UINT8 dummyDta)
 {
 	UINT8 retVal = 0;
 
-	if (3 == offset)
-	{
-		if ((0x80 == namcoCustomIC.n50xx.input) ||
-			(0x10 == namcoCustomIC.n50xx.input) )
-			retVal = 0x05;
-		else
-			retVal = 0x95;
-	}
+   DBGPRINT_50XX{bprintf(PRINT_NORMAL, _T("N50xxRd request @ %x... [%x]\n\r"), offset, namcoCustomIC.n06xx.customCommand);}
 
+   switch (namcoCustomIC.n06xx.customCommand)
+   {
+      case 0x74:  
+      case 0x94:  // score regs
+      {
+         switch (offset)
+         {
+            case 0:
+            {
+               UINT8 flags = 0;
+               UINT8 lo = (namcoCustomIC.n50xx.player->score / 1000000) % 10;
+               if (namcoCustomIC.n50xx.player->score >= namcoCustomIC.n50xx.hiScore)
+               {
+                  namcoCustomIC.n50xx.hiScore = namcoCustomIC.n50xx.player->score;
+                  flags |= 0x80;
+               }
+               if (namcoCustomIC.n50xx.player->score >= namcoCustomIC.n50xx.player->bonus)
+               {
+                  if (namcoCustomIC.n50xx.player->bonus == namcoCustomIC.n50xx.bonus.first)
+                  {
+                     namcoCustomIC.n50xx.player->bonus = namcoCustomIC.n50xx.bonus.interval;
+                     flags |= 0x40;
+                  }
+                  else
+                  {
+                     namcoCustomIC.n50xx.player->bonus += namcoCustomIC.n50xx.bonus.interval;
+                     flags |= 0x20;
+                  }
+               }
+               retVal = (lo | flags);
+            }
+            break;
+            
+            case 1:
+            {
+               UINT8 hi = (namcoCustomIC.n50xx.player->score / 100000) % 10;
+               UINT8 lo = (namcoCustomIC.n50xx.player->score / 10000) % 10;
+               retVal = (hi * 16) + lo;
+            }
+            break;
+            
+            case 2:
+            {
+               UINT8 hi = (namcoCustomIC.n50xx.player->score / 1000) % 10;
+               UINT8 lo = (namcoCustomIC.n50xx.player->score / 100) % 10;
+               retVal = (hi * 16) + lo;
+            }
+            break;
+
+            case 3:
+            {
+               UINT8 hi = (namcoCustomIC.n50xx.player->score / 10) % 10;
+               UINT8 lo = namcoCustomIC.n50xx.player->score % 10;
+               retVal = (hi * 16) + lo;
+            }
+            break;
+
+            default:
+               DBGPRINT_50XX_ERR{bprintf(PRINT_ERROR, _T("N50xxRd unknown request %d @ %d\n\r"), namcoCustomIC.n06xx.customCommand, offset);}
+            break;
+         }
+      }
+      break;
+   
+      default:
+         DBGPRINT_50XX_ERR{bprintf(PRINT_ERROR, _T("N50xxRd unknown request @ 3 : %d\n\r"), namcoCustomIC.n06xx.customCommand);}
+      break;
+   }
+   
+   DBGPRINT_50XX{bprintf(PRINT_NORMAL, _T("   N50xxRd request %02x:%02x (%x)\n\r"), offset, retVal, namcoCustomIC.n06xx.customCommand);}
+         
 	return retVal;
 }
-
 
 static UINT8 namco53xxRead(UINT8 offset, UINT8 dummyDta)
 {
@@ -806,11 +951,209 @@ static UINT8 namcoCustomICsReadDta(UINT16 offset)
 	return retVal;
 }
 
+/*
+
+   N50xx Commands:
+
+0x = nop
+
+1x = reset scores
+
+2x = set first bonus score (followed by 3 bytes)
+
+3x = set interval bonus score (followed by 3 bytes)
+
+4x = ?
+
+5x = set high score (followed by 3 bytes)
+
+60 = switch to player 1
+68 = switch to player 2
+
+70 = switch to increment score
+7x = switch to decrement score
+
+score increments/decrements:
+
+80 =    5
+81 =   10
+82 =   15
+83 =   20
+84 =   25
+85 =   30
+86 =   40
+87 =   50
+88 =   60
+89 =   70
+8A =   80
+8B =   90
+8C =  100
+8D =  200
+8E =  300
+8F =  500
+
+9x same as 8x but *10
+Ax same as 8x but *100
+
+B0h =   10
+B1h =   20
+B2h =   30
+B3h =   40
+B4h =   50
+B5h =   60
+B6h =   80
+B7h =  100
+B8h =  120
+B9h =  140
+BAh =  160
+BBh =  180
+BCh =  200
+BDh =  400
+BEh =  600
+BFh = 1000
+
+Cx same as Bx but *10
+Dx same as Bx but *100
+
+E0 =   15
+E1 =   30
+E2 =   45
+E3 =   60
+E4 =   75
+E5 =   90
+E6 =  120
+E7 =  150
+E8 =  180
+E9 =  210
+EA =  240
+EB =  270
+EC =  300
+ED =  600
+EE =  900
+EF = 1500
+
+Fx same as Ex but *10
+
+
+When reading, the score for the currently selected player is returned. The first
+byte also contains flags.
+
+Byte 0: BCD Score (fs------) and flags
+Byte 1: BCD Score (--ss----)
+Byte 2: BCD Score (----ss--)
+Byte 3: BCD Score (------ss)
+
+Flags: 80=high score, 40=first bonus, 20=interval bonus, 10=?
+*/
+
+static const UINT32 scoreDeltaList89A[16] = {   5, 10, 15, 20, 25, 30,  40,  50,  60,  70,  80,  90, 100, 200, 300,  500 };
+static const UINT32 scoreDeltaListBCD[16] = {  10, 20, 30, 40, 50, 60,  80, 100, 120, 140, 160, 180, 200, 400, 600, 1000 };
+static const UINT32 scoreDeltaListEF [16] = {  15, 30, 45, 60, 75, 90, 120, 150, 180, 210, 240, 270, 300, 600, 900, 1500 };
+
 static UINT8 namco50xxWrite(UINT8 offset, UINT8 dta)
 {
-	if (0 == offset)
-		namcoCustomIC.n50xx.input = dta;
+   namcoCustomIC.n50xx.input[offset & 0x0f] = dta;
+   UINT8 request = namcoCustomIC.n50xx.input[0] & 0xf0;
+   UINT32 scoreAdjust = 0;
+   
+	switch (offset)
+   {
+      case 0:
+      {
+         switch (request)
+         {
+            case 0x00: 
+               namcoCustomIC.n50xx.incdec = 1;
+               scoreAdjust = (scoreDeltaList89A[dta&0x0f] *   1); 
+            break;
 
+            case 0x10:  //reset scores
+               namcoCustomIC.n50xx.player1.score = 0;
+               namcoCustomIC.n50xx.player1.bonus = namcoCustomIC.n50xx.bonus.first;
+               namcoCustomIC.n50xx.player2.score = 0;
+               namcoCustomIC.n50xx.player2.bonus = namcoCustomIC.n50xx.bonus.first;
+               namcoCustomIC.n50xx.player = &namcoCustomIC.n50xx.player1;
+            break;
+            
+            case 0x20:  // set first bonus
+            case 0x30:	// set interval bonus
+            case 0x50:	// set hi-score
+            break;
+            
+            case 0x40:	// verify mode
+               namcoCustomIC.n50xx.code.word = 1 - namcoCustomIC.n50xx.code.word;
+            break;
+            
+            case 0x60:	
+            {
+               if (dta & 0x08) /* 2P Score */
+                  namcoCustomIC.n50xx.player = &namcoCustomIC.n50xx.player2;
+               else            /* 1P Score */
+                  namcoCustomIC.n50xx.player = &namcoCustomIC.n50xx.player1;
+            }
+            break;
+            
+            case 0x70:	
+            {
+               if (dta & 0x0f) /* decrement */
+                  namcoCustomIC.n50xx.incdec = 1;
+               else            /* increment */
+                  namcoCustomIC.n50xx.incdec = 0;
+            }
+            break;
+            
+            case 0x80: scoreAdjust = (scoreDeltaList89A[dta&0x0f] *   1); break;
+            case 0x90: scoreAdjust = (scoreDeltaList89A[dta&0x0f] *  10); break;
+            case 0xa0: scoreAdjust = (scoreDeltaList89A[dta&0x0f] * 100); break;
+            case 0xb0: scoreAdjust = (scoreDeltaListBCD[dta&0x0f] *   1); break;
+            case 0xc0: scoreAdjust = (scoreDeltaListBCD[dta&0x0f] *  10); break;
+            case 0xd0: scoreAdjust = (scoreDeltaListBCD[dta&0x0f] * 100); break;
+            case 0xe0: scoreAdjust = (scoreDeltaListEF [dta&0x0f] *   1); break;
+            case 0xf0: scoreAdjust = (scoreDeltaListEF [dta&0x0f] *  10); break;
+
+            default:
+               DBGPRINT_50XX_ERR{bprintf(PRINT_NORMAL, _T("N50xx: unknown cmd %02x\n\r"), dta);}
+            break;
+         }
+      }
+      break;
+		
+		case 3:
+      {
+         UINT32 num =     (namcoCustomIC.n50xx.input[0] % 16);
+         num = num * 10 + (namcoCustomIC.n50xx.input[1] / 16);
+         num = num * 10 + (namcoCustomIC.n50xx.input[1] % 16);
+         num = num * 10 + (namcoCustomIC.n50xx.input[2] / 16);
+         num = num * 10 + (namcoCustomIC.n50xx.input[2] % 16);
+         num = num * 10 + (namcoCustomIC.n50xx.input[3] / 16);
+         num = num * 10 + (namcoCustomIC.n50xx.input[3] % 16);
+
+         if (0x10 == request)
+            namcoCustomIC.n50xx.player->score = num;
+         
+         if (0x20 == request)
+            namcoCustomIC.n50xx.bonus.first = num;
+         
+         if (0x30 == request)
+            namcoCustomIC.n50xx.bonus.interval = num;
+         
+         if (0x50 == request)
+            namcoCustomIC.n50xx.hiScore = num;
+            
+         DBGPRINT_50XX{bprintf(PRINT_NORMAL, _T("  Set Val 0x%02x = %d\n\r"), request, num);}
+      }
+      break;
+	}
+
+   if (0 != scoreAdjust)
+   {
+      DBGPRINT_50XX{bprintf(PRINT_NORMAL, _T("  ... score       = %6d (%x)\n\r"), namcoCustomIC.n50xx.player->score, namcoCustomIC.n50xx.incdec);}
+      DBGPRINT_50XX{bprintf(PRINT_NORMAL, _T("  +-+ scoreAdjust = %6d [%x] (%02x:%02x)\n\r"), scoreAdjust, scoreAdjust, offset, dta);}
+      if (namcoCustomIC.n50xx.incdec) namcoCustomIC.n50xx.player->score -= scoreAdjust;
+      else                            namcoCustomIC.n50xx.player->score += scoreAdjust;
+      DBGPRINT_50XX{bprintf(PRINT_NORMAL, _T("  --> score       = %6d (%x)\n\r"), namcoCustomIC.n50xx.player->score, namcoCustomIC.n50xx.incdec);}
+   }
+   
 	return 0;
 }
 
@@ -902,7 +1245,7 @@ static UINT8 namco51xxWrite(UINT8 offset, UINT8 dta)
 				break;
 
 			default:
-				bprintf(PRINT_ERROR, _T("unknown 51XX command %02x\n"), dta);
+				DBGPRINT_51XX_ERR{bprintf(PRINT_ERROR, _T("unknown 51XX command %02x"), dta);}
 				break;
 		}
 	}
@@ -943,12 +1286,12 @@ static INT32 n54xxCheckBuffer(UINT8 *n54xxBuffer, UINT32 bufferSize)
 					sampleEntry->sampleTrigger[2],
 					sampleEntry->sampleTrigger[3]
 				   );
-			bprintf(PRINT_NORMAL, _T("%S\n"), bufCheck);
+			bprintf(PRINT_NORMAL, _T("%S"), bufCheck);
 #endif
 			sampleEntry ++;
 		}
 #if n54xxDebug
-		bprintf(PRINT_NORMAL, _T("  %d (%d)\n"), retVal, sampleEntry->sampleNo);
+		bprintf(PRINT_NORMAL, _T("  %d (%d)"), retVal, sampleEntry->sampleNo);
 #endif
 	}
 
@@ -1069,13 +1412,13 @@ static UINT8 namcoCustomICsReadCmd(UINT16 offset)
 static void namcoCustomICsWriteCmd(UINT16 offset, UINT8 dta)
 {
 	namcoCustomIC.n06xx.customCommand = dta;
-	namcoCustomIC.n06xx.CPU1FireNMI = 1;
+	namcoCustomIC.n06xx.CPUFireNMI = 1;
 
 	switch (namcoCustomIC.n06xx.customCommand)
 	{
 		case 0x10:
 			{
-				namcoCustomIC.n06xx.CPU1FireNMI = 0;
+				namcoCustomIC.n06xx.CPUFireNMI = 0;
 			}
 			break;
 
@@ -1088,6 +1431,8 @@ static UINT8 namcoZ80ReadDip(UINT16 offset)
 {
 	UINT8 retVal = input.dip[1].bits.bit[offset] | input.dip[0].bits.bit[offset];
 
+   DBGPRINT_DIP{bprintf(PRINT_NORMAL, _T("DipSw Rd: %x:%x\n\r"), offset, retVal);}
+
 	return retVal;
 }
 
@@ -1095,7 +1440,7 @@ static UINT8 __fastcall namcoZ80ProgRead(UINT16 addr)
 {
 	struct CPU_Rd_Table *rdEntry = machine.config->rdAddrList;
 	UINT8 dta = 0;
-
+   
 	if (NULL != rdEntry)
 	{
 		while (NULL != rdEntry->readFunc)
@@ -1107,7 +1452,10 @@ static UINT8 __fastcall namcoZ80ProgRead(UINT16 addr)
 			}
 			rdEntry ++;
 		}
+
 	}
+   
+   DBGPRINT_INFO{bprintf(PRINT_NORMAL, _T("Z80-%d Rd %x:%x\n"), ZetGetActive(), addr, dta); }
 
 	return dta;
 }
@@ -1135,6 +1483,7 @@ static void namcoZ80WriteCPU1Irq(UINT16 Offset, UINT8 dta)
 static void namcoZ80WriteCPU2Irq(UINT16 Offset, UINT8 dta)
 {
 	cpus.CPU[CPU2].fireIRQ = dta & 0x01;
+
 	if (!cpus.CPU[CPU2].fireIRQ)
 	{
 		INT32 nActive = ZetGetActive();
@@ -1184,10 +1533,16 @@ static void namcoZ80WriteFlipScreen(UINT16 offset, UINT8 dta)
 	machine.flipScreen = dta & 0x01;
 }
 
+static void WatchDogWriteNotImplemented(UINT16 offset, UINT8 dta)
+{
+	offset = dta;
+}
+
+
 static void __fastcall namcoZ80ProgWrite(UINT16 addr, UINT8 dta)
 {
 	struct CPU_Wr_Table *wrEntry = machine.config->wrAddrList;
-
+   
 	if (NULL != wrEntry)
 	{
 		while (NULL != wrEntry->writeFunc)
@@ -1195,12 +1550,14 @@ static void __fastcall namcoZ80ProgWrite(UINT16 addr, UINT8 dta)
 			if ( (addr >= wrEntry->startAddr) &&
 				(addr <= wrEntry->endAddr)      )
 			{
-				wrEntry->writeFunc(addr - wrEntry->startAddr, dta);
+            wrEntry->writeFunc(addr - wrEntry->startAddr, dta);
 			}
 
 			wrEntry ++;
 		}
 	}
+   
+   DBGPRINT_INFO{bprintf(PRINT_NORMAL, _T("Z80-%d Wr %x:%x\n"), ZetGetActive(), addr, dta); }
 }
 
 static tilemap_scan ( namco )
@@ -1392,32 +1749,42 @@ static INT32 DrvFrame(void)
 	for (INT32 i = 0; i < nInterleave; i++)
 	{
 		ZetOpen(CPU1);
-		CPU_RUN(0, Zet);
+		CPU_RUN(CPU1, Zet);
 		if (i == (nInterleave-1) && cpus.CPU[CPU1].fireIRQ)
 		{
 			ZetSetIRQLine(0, CPU_IRQSTATUS_HOLD);
 		}
-		if ( (9 == (i % 10)) && namcoCustomIC.n06xx.CPU1FireNMI )
-		{
-			ZetNmi();
-		}
+      if (NULL != machine.config->customIC[CPU1])
+      {
+         if ( (9 == (i % 10)) && machine.config->customIC[CPU1]->n06xx.CPUFireNMI )
+         {
+            ZetNmi();
+         }
+      }
 		ZetClose();
 
 		if (!cpus.CPU[CPU2].halt)
 		{
 			ZetOpen(CPU2);
-			CPU_RUN(1, Zet);
+			CPU_RUN(CPU2, Zet);
 			if (i == (nInterleave-1) && cpus.CPU[CPU2].fireIRQ)
 			{
 				ZetSetIRQLine(0, CPU_IRQSTATUS_HOLD);
 			}
+         if (NULL != machine.config->customIC[CPU2])
+         {
+            if ( (9 == (i % 10)) && machine.config->customIC[CPU2]->n06xx.CPUFireNMI )
+            {
+               ZetNmi();
+            }
+         }
 			ZetClose();
 		}
 
 		if (!cpus.CPU[CPU3].halt)
 		{
 			ZetOpen(CPU3);
-			CPU_RUN(2, Zet);
+			CPU_RUN(CPU3, Zet);
 			if ( ((i == ((64 + 000) * nInterleave) / 272) ||
 				  (i == ((64 + 128) * nInterleave) / 272))   && cpus.CPU[CPU3].fireIRQ)
 			{
@@ -1472,7 +1839,7 @@ static INT32 DrvScan(INT32 nAction, INT32 *pnMin)
 		SCAN_VAR(cpus.CPU[CPU3].halt);
 		SCAN_VAR(machine.flipScreen);
 		SCAN_VAR(namcoCustomIC.n06xx.customCommand);
-		SCAN_VAR(namcoCustomIC.n06xx.CPU1FireNMI);
+		SCAN_VAR(namcoCustomIC.n06xx.CPUFireNMI);
 		SCAN_VAR(namcoCustomIC.n51xx.mode);
 		SCAN_VAR(namcoCustomIC.n51xx.credits);
 		SCAN_VAR(namcoCustomIC.n51xx.leftCoinPerCredit);
@@ -1992,7 +2359,7 @@ static struct CPU_Wr_Table galagaWriteTable[] =
 	{ 0x6821, 0x6821, namcoZ80WriteCPU2Irq    },
 	{ 0x6822, 0x6822, namcoZ80WriteCPU3Irq    },
 	{ 0x6823, 0x6823, namcoZ80WriteCPUReset   },
-	//	{ 0x6830, 0x6830, WatchDogWriteNotImplemented },
+	{ 0x6830, 0x6830, WatchDogWriteNotImplemented },
 	{ 0x7000, 0x700f, namcoCustomICsWriteDta  },
 	{ 0x7100, 0x7100, namcoCustomICsWriteCmd  },
 	{ 0xa000, 0xa005, galagaZ80WriteStars     },
@@ -2106,7 +2473,8 @@ static struct Machine_Config_Def galagaMachineConfig =
 	/*getSpriteParams        */ galagaGetSpriteParams,
 	/*reset                  */ galagaReset,
 	/*customRWTable          */ galagaCustomICRW,
-	/*n54xxSampleList        */ galagaN54xxSampleList
+	/*n54xxSampleList        */ galagaN54xxSampleList,
+   /*customIC[]             */ { &namcoCustomIC, NULL, NULL }
 };
 
 static INT32 galagaInit(void)
@@ -2135,7 +2503,8 @@ static struct Machine_Config_Def gallagMachineConfig =
 	/*getSpriteParams        */ galagaGetSpriteParams,
 	/*reset                  */ galagaReset,
 	/*customRWTable          */ galagaCustomICRW,
-	/*n54xxSampleList        */ galagaN54xxSampleList
+	/*n54xxSampleList        */ galagaN54xxSampleList,
+   /*customIC[]             */ { &namcoCustomIC, NULL, NULL }
 };
 
 static INT32 gallagInit(void)
@@ -2334,7 +2703,6 @@ static void galagaInitStars(void)
 
 	if (machine.starsInitted) return;
 	machine.starsInitted = 1;
-	bprintf(0, _T("init stars!\n"));
 
 	const UINT16 feed = 0x9420;
 
@@ -3038,7 +3406,7 @@ static struct CPU_Wr_Table digdugWriteTable[] =
 	{ 0x6821, 0x6821, namcoZ80WriteCPU2Irq    },
 	{ 0x6822, 0x6822, namcoZ80WriteCPU3Irq    },
 	{ 0x6823, 0x6823, namcoZ80WriteCPUReset   },
-	//	{ 0x6830, 0x6830, WatchDogWriteNotImplemented },
+	{ 0x6830, 0x6830, WatchDogWriteNotImplemented },
 	{ 0x7000, 0x700f, namcoCustomICsWriteDta  },
 	{ 0x7100, 0x7100, namcoCustomICsWriteCmd  },
 	{ 0xa000, 0xa006, digdug_pf_latch_w       },
@@ -3133,7 +3501,8 @@ static struct Machine_Config_Def digdugMachineConfig =
 	/*getSpriteParams        */ digdugGetSpriteParams,
 	/*reset                  */ digdugReset,
 	/*customRWTable          */ digdugCustomRWTable,
-	/*n54xxSampleList        */ NULL
+	/*n54xxSampleList        */ NULL,
+   /*customIC[]             */ { &namcoCustomIC, NULL, NULL }
 };
 
 static INT32 digdugInit(void)
@@ -3958,7 +4327,7 @@ static struct CPU_Wr_Table xeviousZ80WriteTable[] =
 	{ 0x6821, 0x6821, namcoZ80WriteCPU2Irq       },
 	{ 0x6822, 0x6822, namcoZ80WriteCPU3Irq       },
 	{ 0x6823, 0x6823, namcoZ80WriteCPUReset      },
-	//	{ 0x6830, 0x6830, WatchDogWriteNotImplemented },
+   { 0x6830, 0x6830, WatchDogWriteNotImplemented },
 	{ 0x7000, 0x700f, namcoCustomICsWriteDta     },
 	{ 0x7100, 0x7100, namcoCustomICsWriteCmd     },
 	{ 0x7800, 0x7fff, xeviousWorkRAMWrite        },
@@ -4084,7 +4453,8 @@ static struct Machine_Config_Def xeviousMachineConfig =
 	/*getSpriteParams        */ xeviousGetSpriteParams,
 	/*reset                  */ DrvDoReset,
 	/*customRWTable          */ xeviousCustomRWTable,
-	/*n54xxSampleList        */ xeviousN54xxSampleList
+	/*n54xxSampleList        */ xeviousN54xxSampleList,
+   /*customIC[]             */ { &namcoCustomIC, NULL, NULL }
 };
 
 static INT32 xeviousInit(void)
@@ -4647,6 +5017,960 @@ struct BurnDriver BurnDrvSxevious =
 	/* Areascan func = */                        DrvScan,
 	/* Recalc Palette = */                       NULL,
 	/* Palette Entries count = */                XEVIOUS_PALETTE_SIZE,
+	/* Width, Height = */   	                  NAMCO_SCREEN_WIDTH, NAMCO_SCREEN_HEIGHT,
+	/* xAspect, yAspect = */   	               3, 4
+};
+
+/* === BOSCONIAN === */
+
+static struct BurnInputInfo BoscoInputList[] =
+{
+	{"Dip 1"             , BIT_DIPSWITCH,  &input.dip[0].byte,                  "dip"       },
+	{"Dip 2"             , BIT_DIPSWITCH,  &input.dip[1].byte,                  "dip"       },
+
+	{"Reset"             , BIT_DIGITAL,    &input.reset,                        "reset"     },
+
+	{"Up"                , BIT_DIGITAL,    &input.ports[1].current.bits.bit[0], "p1 up"     },
+	{"Right"             , BIT_DIGITAL,    &input.ports[1].current.bits.bit[1], "p1 right"  },
+	{"Down"              , BIT_DIGITAL,    &input.ports[1].current.bits.bit[2], "p1 down"   },
+	{"Left"              , BIT_DIGITAL,    &input.ports[1].current.bits.bit[3], "p1 left"   },
+	{"Up (Cocktail)"     , BIT_DIGITAL,    &input.ports[1].current.bits.bit[4], "p2 up"     },
+	{"Right (Cocktail)"  , BIT_DIGITAL,    &input.ports[1].current.bits.bit[5], "p2 right"  },
+	{"Down (Cocktail)"   , BIT_DIGITAL,    &input.ports[1].current.bits.bit[6], "p2 down"   },
+	{"Left (Cocktail)"   , BIT_DIGITAL,    &input.ports[1].current.bits.bit[7], "p2 left"   },
+
+	{"P1 Button 1"       , BIT_DIGITAL,    &input.ports[0].current.bits.bit[0], "p1 fire 1" },
+	{"Fire 1 (Cocktail)" , BIT_DIGITAL,    &input.ports[0].current.bits.bit[1], "p2 fire 1" },
+	{"Start 1"           , BIT_DIGITAL,    &input.ports[0].current.bits.bit[2], "p1 start"  },
+	{"Start 2"           , BIT_DIGITAL,    &input.ports[0].current.bits.bit[3], "p2 start"  },
+	{"Coin 1"            , BIT_DIGITAL,    &input.ports[0].current.bits.bit[4], "p1 coin"   },
+	{"Coin 2"            , BIT_DIGITAL,    &input.ports[0].current.bits.bit[5], "p2 coin"   },
+	{"Service"           , BIT_DIGITAL,    &input.ports[0].current.bits.bit[6], "service"   },
+	{"Service2"          , BIT_DIGITAL,    &input.ports[0].current.bits.bit[7], "service"   },
+
+};
+
+STDINPUTINFO(Bosco)
+
+#define BOSCO_NUM_OF_DIPSWITCHES     2
+
+static struct BurnDIPInfo BoscoDIPList[]=
+{
+	// Default Values
+	// nOffset, nID,     nMask,   nDefault,   NULL
+	{  0x00,    0xff,    0xff,    0x8f,       NULL                     },
+	{  0x01,    0xff,    0xff,    0xff,       NULL                     },
+
+	// Dip 1
+	// x,       DIP_GRP, x,       OptionCnt,  szTitle
+	{  0,       0xfe,    0,       8,          "Coinage"                },
+	// nInput,  nFlags,  nMask,   nSetting,   szText
+	{  0x00,    0x01,    0x07,    0x00,       "Freeplay"               },
+	{  0x00,    0x01,    0x07,    0x01,       "4 Coins 1 Play"         },
+	{  0x00,    0x01,    0x07,    0x02,       "3 Coin2 1 Play"         },
+	{  0x00,    0x01,    0x07,    0x03,       "2 Coins 1 Play"         },
+	{  0x00,    0x01,    0x07,    0x04,       "2 Coins 3 Plays"        },
+	{  0x00,    0x01,    0x07,    0x05,       "1 Coin  3 Plays"        },
+	{  0x00,    0x01,    0x07,    0x06,       "1 Coin  2 Plays"        },
+	{  0x00,    0x01,    0x07,    0x07,       "1 Coin  1 Play"         },
+
+	// x,       DIP_GRP, x,       OptionCnt,  szTitle
+	{  0,       0xfe,    0,       8,          "Bonus Life"             },
+	// nInput,  nFlags,  nMask,   nSetting,   szText
+	{  0x00,    0x01,    0x38,    0x20,       "20k  70k +70k"          },
+	{  0x00,    0x01,    0x38,    0x10,       "15k  50k +50k"          },
+	{  0x00,    0x01,    0x38,    0x30,       "15k  50k"               },
+	{  0x00,    0x01,    0x38,    0x08,       "10k  50k +50k"          },
+	{  0x00,    0x01,    0x38,    0x28,       "30k 100k +100k"         },
+	{  0x00,    0x01,    0x38,    0x18,       "15k  70k +70k"          },
+	{  0x00,    0x01,    0x38,    0x38,       "20k  70k"               },
+	{  0x00,    0x01,    0x38,    0x00,       "None"                   },
+
+/* TODO: These are valid when lives = 5 (DS2 & 0xc0 == 0xc0)
+   {  0x00,    0x01,    0xf8,    0xf0,       "30k 100k +100k"         },
+	{  0x00,    0x01,    0xf8,    0xf8,       "30k 120k +120k"         },
+	{  0x00,    0x01,    0xf8,    0xc8,       "15k  70k"               },
+	{  0x00,    0x01,    0xf8,    0xd0,       "20k  70k"               },
+	{  0x00,    0x01,    0xf8,    0xd8,       "20k 100k"               },
+	{  0x00,    0x01,    0xf8,    0xe0,       "30k 120k"               },
+	{  0x00,    0x01,    0xf8,    0xe8,       "30k  80k +80k"          },
+	{  0x00,    0x01,    0xf8,    0xc0,       "None"                   },
+*/
+	// x,       DIP_GRP, x,       OptionCnt,  szTitle
+	{  0,       0xfe,    0,       4,          "Lives"                  },
+	// nInput,  nFlags,  nMask,   nSetting,   szText
+	{  0x00,    0x01,    0xc0,    0x00,       "1"                      },
+	{  0x00,    0x01,    0xc0,    0x40,       "2"                      },
+	{  0x00,    0x01,    0xc0,    0x80,       "3"                      },
+	{  0x00,    0x01,    0xc0,    0xc0,       "5"                      },
+
+	// Dip 2
+	// x,       DIP_GRP, x,       OptionCnt,  szTitle
+	{  0,       0xfe,    0,       2,          "No of Players"          },
+	// nInput,  nFlags,  nMask,   nSetting,   szText
+	{  0x01,    0x01,    0x01,    0x00,       "1 Player only"          },
+	{  0x01,    0x01,    0x01,    0x01,       "1 or 2 Players"         },
+
+	// x,       DIP_GRP, x,       OptionCnt,  szTitle
+	{  0,       0xfe,    0,       4,          "Difficulty"             },
+	// nInput,  nFlags,  nMask,   nSetting,   szText
+	{  0x01,    0x01,    0x06,    0x02,       "Easy"                   },
+	{  0x01,    0x01,    0x06,    0x06,       "Normal"                 },
+	{  0x01,    0x01,    0x06,    0x04,       "Hard"                   },
+	{  0x01,    0x01,    0x06,    0x00,       "Auto"                   },
+
+	// x,       DIP_GRP, x,       OptionCnt,  szTitle
+	{  0,       0xfe,    0,       2,          "Allow Continues"        },
+	// nInput,  nFlags,  nMask,   nSetting,   szText
+	{  0x01,    0x01,    0x08,    0x08,       "Yes"                    },
+	{  0x01,    0x01,    0x08,    0x00,       "No"                     },
+
+	// x,       DIP_GRP, x,       OptionCnt,  szTitle
+	{  0,       0xfe,    0,       2,          "Demo Sounds"            },
+	// nInput,  nFlags,  nMask,   nSetting,   szText
+	{  0x01,    0x01,    0x10,    0x00,       "On"                     },
+	{  0x01,    0x01,    0x10,    0x10,       "Off"                    },
+
+	// x,       DIP_GRP, x,       OptionCnt,  szTitle
+	{  0,       0xfe,    0,       2,          "Freeze"                 },
+	// nInput,  nFlags,  nMask,   nSetting,   szText
+	{  0x01,    0x01,    0x20,    0x20,       "Off"                    },
+	{  0x01,    0x01,    0x20,    0x00,       "On"                     },
+
+	// x,       DIP_GRP, x,       OptionCnt,  szTitle
+//	{  0,       0xfe,    0,       1,          "Not Used"               },
+	// nInput,  nFlags,  nMask,   nSetting,   szText
+//	{  0x01,    0x01,    0x40,    0x40,       "Always Off"             },
+
+	// x,       DIP_GRP, x,       OptionCnt,  szTitle
+	{  0,       0xfe,    0,       2,          "Coin Counter"           },
+	// nInput,  nFlags,  nMask,   nSetting,   szText
+	{  0x01,    0x01,    0x80,    0x00,       "Single Coin"            },
+	{  0x01,    0x01,    0x80,    0x80,       "Dual Coin"              },
+
+};
+
+STDDIPINFO(Bosco)
+
+static struct BurnRomInfo BoscoRomDesc[] = {
+	{ "bos3_1.3n",      0x01000, 0x96021267, BRF_ESS | BRF_PRG   }, //  0	Z80 #1 Program Code
+	{ "bos1_2.3m",      0x01000, 0x2d8f3ebe, BRF_ESS | BRF_PRG   }, //  1
+	{ "bos1_3.3l",      0x01000, 0xc80ccfa5, BRF_ESS | BRF_PRG   }, //  2
+	{ "bos1_4b.3k",     0x01000, 0xa3f7f4ab, BRF_ESS | BRF_PRG   }, //  3
+
+	{ "bos1_5c.3j",     0x01000, 0xa7c8e432, BRF_ESS | BRF_PRG   }, //  4	Z80 #2 Program Code
+	{ "bos3_6.3h",      0x01000, 0x4543cf82, BRF_ESS | BRF_PRG   }, //  5
+
+	{ "bos1_7.3e",      0x01000, 0xd45a4911, BRF_ESS | BRF_PRG   }, //  6	Z80 #3 Program Code
+
+	{ "bos1_14.5d",     0x01000, 0xa956d3c5, BRF_GRA             }, //  7 gfx1 chars
+	{ "bos1_13.5e",     0x01000, 0xe869219c, BRF_GRA             }, //  8 gfx2 sprites
+	{ "bos1-4.2r",      0x00100, 0x9b69b543, BRF_GRA             }, //  9 gfx3 dots 
+
+	{ "bos1_9.5n",      0x01000, 0x09acc978, BRF_GRA             }, // 10 speech 
+	{ "bos1_10.5m",     0x01000, 0xe571e959, BRF_GRA             }, // 11 speech 
+	{ "bos1_11.5k",     0x01000, 0x17ac9511, BRF_GRA             }, // 12 speech 
+
+	{ "bos1-6.6b",      0x00020, 0xd2b96fb0, BRF_GRA             }, // 13 palette 
+	{ "bos1-5.4m",      0x00100, 0x4e15d59c, BRF_GRA             }, // 14 lookup 
+	{ "bos1-3.2d",      0x00020, 0xb88d5ba9, BRF_GRA             }, // 15 video layout 
+	{ "bos1-7.7h",      0x00020, 0x87d61353, BRF_GRA             }, // 16 video timing 
+
+	{ "bos1-1.1d",      0x00100, 0xde2316c6, BRF_GRA             }, // 17 ??? 
+	{ "bos1-2.5c",      0x00100, 0x77245b66, BRF_GRA             }, // 18 timing
+};
+
+STD_ROM_PICK(Bosco)
+STD_ROM_FN(Bosco)
+
+static struct BurnRomInfo BoscoMDRomDesc[] = {
+	{ "3n",              0x01000, 0x441b501a, BRF_ESS | BRF_PRG   }, //  0	Z80 #1 Program Code
+	{ "3m",              0x01000, 0xa3c5c7ef, BRF_ESS | BRF_PRG   }, //  1
+	{ "3l",              0x01000, 0x6ca9a0cf, BRF_ESS | BRF_PRG   }, //  2
+	{ "3k",              0x01000, 0xd83bacc5, BRF_ESS | BRF_PRG   }, //  3
+
+	{ "3j",              0x01000, 0x4374e39a, BRF_ESS | BRF_PRG   }, //  4	Z80 #2 Program Code
+	{ "3h",              0x01000, 0x04e9fcef, BRF_ESS | BRF_PRG   }, //  5
+
+	{ "bos1_7.3e",       0x01000, 0xd45a4911, BRF_ESS | BRF_PRG   }, //  6	Z80 #3 Program Code
+
+	{ "bos1_14.5d",      0x01000, 0xa956d3c5, BRF_GRA             }, //  7 gfx1 chars
+	{ "bos1_13.5e",      0x01000, 0xe869219c, BRF_GRA             }, //  8 gfx2 sprites
+	{ "bos1-4.2r",       0x00100, 0x9b69b543, BRF_GRA             }, //  9 gfx3 dots 
+
+	{ "bos1_9.5n",       0x01000, 0x09acc978, BRF_GRA             }, // 10 speech 
+	{ "bos1_10.5m",      0x01000, 0xe571e959, BRF_GRA             }, // 11 speech 
+	{ "bos1_11.5k",      0x01000, 0x17ac9511, BRF_GRA             }, // 12 speech 
+
+	{ "bos1-6.6b",       0x00020, 0xd2b96fb0, BRF_GRA             }, // 13 palette 
+	{ "bos1-5.4m",       0x00100, 0x4e15d59c, BRF_GRA             }, // 14 lookup 
+	{ "bos1-3.2d",       0x00020, 0xb88d5ba9, BRF_GRA             }, // 15 video layout 
+	{ "bos1-7.7h",       0x00020, 0x87d61353, BRF_GRA             }, // 16 video timing 
+
+	{ "bos1-1.1d",       0x00100, 0xde2316c6, BRF_GRA             }, // 17 ??? 
+	{ "bos1-2.5c",       0x00100, 0x77245b66, BRF_GRA             }, // 18 timing
+};
+
+STD_ROM_PICK(BoscoMD)
+STD_ROM_FN(BoscoMD)
+
+#define BOSCO_NO_OF_COLS                   32
+#define BOSCO_NO_OF_ROWS                   32
+
+#define BOSCO_NUM_OF_CHAR_PALETTE_BITS     2
+#define BOSCO_NUM_OF_SPRITE_PALETTE_BITS   2
+#define BOSCO_NUM_OF_BGTILE_PALETTE_BITS   3    // dots
+
+#define BOSCO_PALETTE_OFFSET_CHARS         0x00
+#define BOSCO_PALETTE_SIZE_CHARS           0x40
+
+#define BOSCO_PALETTE_OFFSET_SPRITE        \
+   (BOSCO_PALETTE_OFFSET_CHARS + \
+	 BOSCO_PALETTE_SIZE_CHARS * (1 << BOSCO_NUM_OF_CHAR_PALETTE_BITS) )
+#define BOSCO_PALETTE_SIZE_SPRITES         0x40
+
+#define BOSCO_PALETTE_OFFSET_BGTILES       \
+   (BOSCO_PALETTE_OFFSET_SPRITE + \
+	 BOSCO_PALETTE_SIZE_SPRITES * (1 << BOSCO_NUM_OF_SPRITE_PALETTE_BITS) )
+#define BOSCO_PALETTE_SIZE_BGTILES         1
+
+#define BOSCO_PALETTE_SIZE \
+   ((BOSCO_PALETTE_SIZE_CHARS   * (1 << BOSCO_NUM_OF_CHAR_PALETTE_BITS))   + \
+	 (BOSCO_PALETTE_SIZE_SPRITES * (1 << BOSCO_NUM_OF_SPRITE_PALETTE_BITS)) + \
+	 (BOSCO_PALETTE_SIZE_BGTILES * (1 << BOSCO_NUM_OF_BGTILE_PALETTE_BITS)) )
+#define BOSCO_PALETTE_MEM_SIZE_IN_BYTES    (BOSCO_PALETTE_SIZE * sizeof(UINT32))
+
+#define BOSCO_NUM_OF_CHAR                  0x40
+#define BOSCO_SIZE_OF_CHAR_IN_BYTES        (16 * 8)
+#define BOSCO_CHAR_MEM_SIZE_IN_BYTES       \
+   (BOSCO_NUM_OF_CHAR * \
+	 BOSCO_SIZE_OF_CHAR_IN_BYTES)
+
+#define BOSCO_NUM_OF_SPRITE                0x40
+#define BOSCO_SIZE_OF_SPRITE_IN_BYTES      (16 * 16)
+#define BOSCO_SPRITE_MEM_SIZE_IN_BYTES     \
+   (BOSCO_NUM_OF_SPRITE * \
+	 BOSCO_SIZE_OF_SPRITE_IN_BYTES)
+
+#define BOSCO_NUM_OF_BGTILE                0x01
+#define BOSCO_SIZE_OF_BGTILE_IN_BYTES      (8 * 8)
+#define BOSCO_TILES_MEM_SIZE_IN_BYTES      \
+   (BOSCO_NUM_OF_BGTILE * \
+	 BOSCO_SIZE_OF_BGTILE_IN_BYTES)
+
+
+static INT32 boscoInit(void);
+static void boscoMemoryMap1(void);
+static void boscoMemoryMap2(void);
+static void boscoMemoryMap3(void);
+static INT32 boscoCharDecode(void);
+static INT32 boscoTilesDecode(void);
+static INT32 boscoSpriteDecode(void);
+static tilemap_callback(bosco);
+static INT32 boscoTilemapConfig(void);
+
+static UINT8 boscoWorkRAMRead(UINT16 offset);
+static UINT8 boscoVideoRAMRead(UINT16 offset);
+static UINT8 boscoColorRAMRead(UINT16 offset);
+
+static void boscoRadarRAMWrite(UINT16 offset, UINT8 dta);
+static void boscoScrollXWrite(UINT16 offset, UINT8 dta);
+static void boscoScrollYWrite(UINT16 offset, UINT8 dta);
+static void boscoStarCtrlWrite(UINT16 offset, UINT8 dta);
+static void boscoStarClrWrite(UINT16 offset, UINT8 dta);
+static void bosco_vh_latch_w(UINT16 offset, UINT8 dta);
+static void boscoWorkRAMWrite(UINT16 offset, UINT8 dta);
+static void boscoVideoRAMWrite(UINT16 offset, UINT8 dta);
+static void boscoColorRAMWrite(UINT16 offset, UINT8 dta);
+
+static UINT8 boscoCustomICsReadDta(UINT16 offset);
+static void boscoCustomICsWriteDta(UINT16 offset, UINT8 dta);
+static UINT8 boscoCustomICsReadCmd(UINT16 offset);
+static void boscoCustomICsWriteCmd(UINT16 offset, UINT8 dta);
+
+static void boscoZ80WriteCPUReset(UINT16 offset, UINT8 dta);
+
+static void boscoCalcPalette(void);
+static void boscoRenderTiles0(void);
+//static UINT32 boscoGetSpriteParams(struct Namco_Sprite_Params *spriteParams, UINT32 offset);
+static INT32 boscoScan(INT32 nAction, INT32 *pnMin);
+
+
+
+static void boscoWDogWrite(UINT16 offset, UINT8 dta);
+
+
+
+
+struct Bosco_RAM
+{
+	UINT8 *workram;
+};
+
+static struct Bosco_RAM boscoRAM;
+
+struct Bosco_ROM
+{
+	UINT8 *rom5k;
+	UINT8 *rom5m;
+	UINT8 *rom5n;
+};
+
+static struct Bosco_ROM boscoROM;
+
+static struct CPU_Config_Def boscoCPU[NAMCO_BRD_CPU_COUNT] =
+{
+	{
+		/* CPU ID = */          CPU1,
+		/* CPU Read Func = */   namcoZ80ProgRead,
+		/* CPU Write Func = */  namcoZ80ProgWrite,
+		/* Memory Mapping = */  boscoMemoryMap1
+	},
+	{
+		/* CPU ID = */          CPU2,
+		/* CPU Read Func = */   namcoZ80ProgRead,
+		/* CPU Write Func = */  namcoZ80ProgWrite,
+		/* Memory Mapping = */  boscoMemoryMap2
+	},
+	{
+		/* CPU ID = */          CPU3,
+		/* CPU Read Func = */   namcoZ80ProgRead,
+		/* CPU Write Func = */  namcoZ80ProgWrite,
+		/* Memory Mapping = */  boscoMemoryMap3
+	},
+};
+
+static struct CPU_Rd_Table boscoZ80ReadTable[] =
+{
+	{ 0x6800, 0x6807, namcoZ80ReadDip            },
+	{ 0x7000, 0x70ff, namcoCustomICsReadDta      },
+	{ 0x7100, 0x7100, namcoCustomICsReadCmd      },
+	{ 0x7800, 0x7fff, boscoWorkRAMRead           },
+	{ 0x8000, 0x87ff, boscoVideoRAMRead          },
+	{ 0x8800, 0x8fff, boscoColorRAMRead          },
+	{ 0x9000, 0x90ff, boscoCustomICsReadDta      },
+	{ 0x9100, 0x9100, boscoCustomICsReadCmd      },
+	{ 0x0000, 0x0000, NULL                       },
+};
+
+static struct CPU_Wr_Table boscoZ80WriteTable[] =
+{
+	{ 0x6800, 0x681f, namcoZ80WriteSound         },
+	{ 0x6820, 0x6820, namcoZ80WriteCPU1Irq       },
+	{ 0x6821, 0x6821, namcoZ80WriteCPU2Irq       },
+	{ 0x6822, 0x6822, namcoZ80WriteCPU3Irq       },
+	{ 0x6823, 0x6823, boscoZ80WriteCPUReset      },
+   { 0x6830, 0x6830, boscoWDogWrite             },
+	{ 0x7000, 0x70ff, namcoCustomICsWriteDta     },
+	{ 0x7100, 0x7100, namcoCustomICsWriteCmd     },
+	{ 0x7800, 0x7fff, boscoWorkRAMWrite          },
+	{ 0x8000, 0x87ff, boscoVideoRAMWrite         },
+	{ 0x8800, 0x8fff, boscoColorRAMWrite         },
+	{ 0x9000, 0x90ff, boscoCustomICsWriteDta     },
+	{ 0x9100, 0x9100, boscoCustomICsWriteCmd     },
+	{ 0x9800, 0x980f, boscoRadarRAMWrite         },
+	{ 0x9810, 0x9810, boscoScrollXWrite          },
+	{ 0x9820, 0x9820, boscoScrollYWrite          },
+	{ 0x9830, 0x9830, boscoStarCtrlWrite         },
+	{ 0x9840, 0x9840, boscoStarClrWrite          },
+	{ 0x9870, 0x9877, bosco_vh_latch_w           },
+	{ 0x0000, 0x0000, NULL                       },
+};
+
+static struct Memory_Map_Def boscoMemTable[] =
+{
+	{  &memory.Z80.rom1,           0x04000,                           MEM_PGM  },
+	{  &memory.Z80.rom2,           0x02000,                           MEM_PGM  },
+	{  &memory.Z80.rom3,           0x01000,                           MEM_PGM  },
+	{  &memory.PROM.palette,       0x00020,                           MEM_ROM  },
+	{  &memory.PROM.charLookup,    0x00100,                           MEM_ROM  },
+	{  &NamcoSoundProm,            0x00200,                           MEM_ROM  },
+
+	{  &boscoRAM.workram,          0x00800,                           MEM_RAM  },
+	{  &memory.RAM.video,          0x01000,                           MEM_RAM  },
+	{  &boscoROM.rom5k,            0x01000,                           MEM_ROM  },
+	{  &boscoROM.rom5m,            0x01000,                           MEM_ROM  },
+	{  &boscoROM.rom5n,            0x01000,                           MEM_ROM  },
+
+	{  &graphics.bgTiles,          BOSCO_TILES_MEM_SIZE_IN_BYTES,     MEM_DATA },
+	{  &graphics.fgChars,          BOSCO_CHAR_MEM_SIZE_IN_BYTES,      MEM_DATA },
+	{  &graphics.sprites,          BOSCO_SPRITE_MEM_SIZE_IN_BYTES,    MEM_DATA },
+	{  (UINT8 **)&graphics.palette, BOSCO_PALETTE_MEM_SIZE_IN_BYTES,  MEM_DATA32},
+};
+
+#define BOSCO_MEM_TBL_SIZE      (sizeof(boscoMemTable) / sizeof(struct Memory_Map_Def))
+
+static struct ROM_Load_Def boscoROMTable[] =
+{
+	{  &memory.Z80.rom1,             0x00000, NULL                 },
+	{  &memory.Z80.rom1,             0x01000, NULL                 },
+	{  &memory.Z80.rom1,             0x02000, NULL                 },
+	{  &memory.Z80.rom1,             0x03000, NULL                 },
+	{  &memory.Z80.rom2,             0x00000, NULL                 },
+	{  &memory.Z80.rom2,             0x01000, NULL                 },
+	{  &memory.Z80.rom3,             0x00000, NULL                 },
+
+	{  &tempRom,                     0x00000, boscoCharDecode      },
+
+	{  &tempRom,                     0x00000, boscoSpriteDecode    },
+
+	{  &tempRom,                     0x00000, boscoTilesDecode     },
+
+	{  &boscoROM.rom5k,              0x00000, NULL                 },
+	{  &boscoROM.rom5m,              0x01000, NULL                 },
+	{  &boscoROM.rom5n,              0x02000, NULL                 },
+
+	{  &memory.PROM.palette,         0x00000, NULL                 },
+	{  &memory.PROM.charLookup,      0x00000, NULL                 },
+	{  &NamcoSoundProm,              0x00000, NULL                 },
+	{  &NamcoSoundProm,              0x00100, namcoMachineInit     }
+};
+
+#define BOSCO_ROM_TBL_SIZE      (sizeof(boscoROMTable) / sizeof(struct ROM_Load_Def))
+
+static DrawFunc_t boscoDrawFuncs[] =
+{
+	boscoCalcPalette,
+	boscoRenderTiles0,
+//	namcoRenderSprites,
+//	boscoRenderTiles1,
+};
+
+#define BOSCO_DRAW_TBL_SIZE  (sizeof(boscoDrawFuncs) / sizeof(boscoDrawFuncs[0]))
+
+/* N50xx:
+Commands:
+
+   N51xx:
+    commands:
+    00: nop
+    01 + 4 arguments: set coinage (xevious, possibly because of a bug, is different)
+    02: go in "credit" mode and enable start buttons
+    03: disable joystick remapping
+    04: enable joystick remapping
+    05: go in "switch" mode
+    06: nop
+    07: nop
+
+
+   N54xx:
+      ???
+      
+   N06xx:
+    Bosco writes:
+        control = 10: 000 R 0000; reset to FF at startup
+        control = C8: 110 w 1000: n54xx-write 17 bytes, control = 10
+        control = 61: 011 w 0001: n51xx-write 1 byte, control = 10
+        control = 71: 011 R 0001: n51xx-read 3 bytes, control = 10
+        control = 94: 100 R 0100: n50xx-read 4 bytes, control = 10
+        control = 64: 011 w 0100: n50xx-write 1 byte, control = 10
+        control = 84: 100 w 0100: n50xx-write 5 bytes, control = 10
+*/
+static struct Namco_Custom_RW_Entry boscoCustomRWTable[] =
+{
+	{  0xc8,    namco54xxWrite    },
+	{  0x61,    namco51xxWrite    },
+	{  0x71,    namco51xxRead     },
+	{  0x94,    namco50xxRead     },
+	{  0x64,    namco50xxWrite    },
+	{  0x84,    namco50xxWrite    },
+	{  0x00,    NULL              }
+};
+
+static struct NCustom_Def boscoCustomIC2;
+
+static struct Machine_Config_Def boscoMachineConfig =
+{
+	/*cpus                   */ boscoCPU,
+	/*wrAddrList             */ boscoZ80WriteTable,
+	/*rdAddrList             */ boscoZ80ReadTable,
+	/*memMapTable            */ boscoMemTable,
+	/*sizeOfMemMapTable      */ BOSCO_MEM_TBL_SIZE,
+	/*romLayoutTable         */ boscoROMTable,
+	/*sizeOfRomLayoutTable   */ BOSCO_ROM_TBL_SIZE,
+	/*tempRomSize            */ 0x8000,
+	/*tilemapsConfig         */ boscoTilemapConfig,
+	/*drawLayerTable         */ boscoDrawFuncs,
+	/*drawTableSize          */ BOSCO_DRAW_TBL_SIZE,
+	/*getSpriteParams        */ NULL, //boscoGetSpriteParams,
+	/*reset                  */ DrvDoReset,
+	/*customRWTable          */ boscoCustomRWTable,
+	/*n54xxSampleList        */ NULL,
+   /*customIC[]             */ { &namcoCustomIC, &boscoCustomIC2, NULL }
+};
+
+static INT32 boscoInit(void)
+{
+	machine.game = NAMCO_BOSCONIAN;
+	machine.numOfDips = BOSCO_NUM_OF_DIPSWITCHES;
+
+	machine.config = &boscoMachineConfig;
+
+	return namcoInitBoard();
+}
+
+static void boscoMemoryMap1(void)
+{
+	ZetMapMemory(memory.Z80.rom1,    0x0000, 0x3fff, MAP_ROM);
+	ZetMapMemory(boscoRAM.workram,   0x7800, 0x9fff, MAP_RAM);
+	ZetMapMemory(memory.RAM.video,   0x8000, 0x8fff, MAP_RAM);
+   
+	memory.RAM.video[0x8c00 - 0x8000] = 1;
+	memory.RAM.video[0x8c01 - 0x8000] = 1;
+}
+
+static void boscoMemoryMap2(void)
+{
+	ZetMapMemory(memory.Z80.rom2,    0x0000, 0x3fff, MAP_ROM);
+	ZetMapMemory(boscoRAM.workram,   0x7800, 0x9fff, MAP_RAM);
+	ZetMapMemory(memory.RAM.video,   0x8000, 0x8fff, MAP_RAM);
+}
+
+static void boscoMemoryMap3(void)
+{
+	ZetMapMemory(memory.Z80.rom3,    0x0000, 0x3fff, MAP_ROM);
+	ZetMapMemory(boscoRAM.workram,   0x7800, 0x9fff, MAP_RAM);
+	ZetMapMemory(memory.RAM.video,   0x8000, 0x8fff, MAP_RAM);
+}
+
+static INT32 boscoCharDecode(void)
+{
+	GfxDecode(
+			  BOSCO_NUM_OF_CHAR,
+			  NAMCO_2BIT_PALETTE_BITS,
+			  8, 8,
+			  (INT32*)planeOffsets2Bit,
+			  (INT32*)xOffsets8x8Tiles2Bit,
+			  (INT32*)yOffsets8x8Tiles2Bit,
+			  BOSCO_SIZE_OF_CHAR_IN_BYTES,
+			  tempRom,
+			  graphics.fgChars
+			 );
+
+	return 0;
+}
+
+static INT32 boscoTilesDecode(void)
+{
+/*
+	GfxDecode(
+			  BOSCO_NUM_OF_BGTILE,
+			  BOSCO_NUM_OF_BGTILE_PALETTE_BITS,
+			  8, 8,
+			  boscoOffsets.bgChars,
+			  boscoCharXOffsets,
+			  boscoCharYOffsets,
+			  BOSCO_SIZE_OF_BGTILE_IN_BYTES,
+			  tempRom,
+			  graphics.bgTiles
+			 );
+
+	memset(tempRom, 0, machine.config->tempRomSize);
+*/
+	return 0;
+}
+
+static INT32 boscoSpriteDecode(void)
+{
+/*
+	GfxDecode(
+			  GALAGA_NUM_OF_SPRITE,
+			  NAMCO_2BIT_PALETTE_BITS,
+			  16, 16,
+			  (INT32*)planeOffsets2Bit,
+			  (INT32*)xOffsets16x16Tiles2Bit,
+			  (INT32*)yOffsets16x16Tiles2Bit,
+			  GALAGA_SIZE_OF_SPRITE_IN_BYTES,
+			  tempRom,
+			  graphics.sprites
+			 );
+*/
+
+	return 0;
+}
+
+static tilemap_callback ( bosco )
+{
+	UINT8 code = memory.RAM.video[(offs & 0x03ff) + 0x0400];
+   UINT8 attr = memory.RAM.video[(offs & 0x03ff) + 0x0c00];
+	TILE_SET_INFO(
+				  0,
+				  code,
+				  attr & 0x3f,
+				  ((attr & 0xc0) >> 6)
+				 );
+
+}
+
+static INT32 boscoTilemapConfig(void)
+{
+	GenericTilemapInit(
+					   0, //TILEMAP_FG,
+					   namco_map_scan,
+					   bosco_map_callback,
+					   8, 8,
+					   //NAMCO_TMAP_WIDTH, NAMCO_TMAP_HEIGHT
+                  BOSCO_NO_OF_COLS, BOSCO_NO_OF_ROWS
+					  );
+
+	GenericTilemapSetGfx(
+						 0, //TILEMAP_FG,
+						 graphics.fgChars,
+						 NAMCO_2BIT_PALETTE_BITS,
+						 8, 8,
+						 (BOSCO_NUM_OF_CHAR * 8 * 8),
+						 BOSCO_PALETTE_OFFSET_CHARS,
+						 (BOSCO_PALETTE_SIZE_CHARS - 1)
+						);
+
+	GenericTilemapSetTransparent(0, 0);
+
+	GenericTilemapSetOffsets(TMAP_GLOBAL, 0, 0);
+
+	return 0;
+}
+
+static UINT8 boscoWorkRAMRead(UINT16 offset)
+{
+	return boscoRAM.workram[offset];
+}
+
+static UINT8 boscoVideoRAMRead(UINT16 offset)
+{
+	return memory.RAM.video[0x0000 + (offset & 0x0bff)];
+}
+
+static UINT8 boscoColorRAMRead(UINT16 offset)
+{
+	return memory.RAM.video[0x0400 + (offset & 0x0bff)];
+}
+
+static void boscoRadarRAMWrite(UINT16 offset, UINT8 dta)
+{
+	boscoRAM.workram[offset & 0x7ff] = dta;
+   bprintf(PRINT_NORMAL, _T("\rBoscoWrRdr %x:%x\n"), offset, dta);
+}
+
+static void boscoScrollXWrite(UINT16 offset, UINT8 dta)
+{
+	boscoRAM.workram[offset & 0x7ff] = dta;
+   bprintf(PRINT_NORMAL, _T("\rBoscoWrScrX %x:%x\n"), offset, dta);
+}
+
+static void boscoScrollYWrite(UINT16 offset, UINT8 dta)
+{
+	boscoRAM.workram[offset & 0x7ff] = dta;
+   bprintf(PRINT_NORMAL, _T("\rBoscoWrScrY %x:%x\n"), offset, dta);
+}
+
+static void boscoStarCtrlWrite(UINT16 offset, UINT8 dta)
+{
+	boscoRAM.workram[offset & 0x7ff] = dta;
+   bprintf(PRINT_NORMAL, _T("\rBoscoWrStrC %x:%x\n"), offset, dta);
+}
+
+static void boscoStarClrWrite(UINT16 offset, UINT8 dta)
+{
+	boscoRAM.workram[offset & 0x07ff] = dta;
+   bprintf(PRINT_NORMAL, _T("\rBoscoWrStrZ %x:%x\n"), offset, dta);
+}
+
+static void boscoWorkRAMWrite(UINT16 offset, UINT8 dta)
+{
+	boscoRAM.workram[offset & 0x07ff] = dta;
+   bprintf(PRINT_NORMAL, _T("\rBoscoWrWRAM %x:%x\n"), offset, dta);
+}
+
+static void boscoVideoRAMWrite(UINT16 offset, UINT8 dta)
+{
+	memory.RAM.video[0x0000 + (offset & 0x0bff)] = dta;
+   bprintf(PRINT_NORMAL, _T("\rBoscoWrVid1 %x:%x\n"), (offset & 0x0bff), dta);
+}
+
+static void boscoColorRAMWrite(UINT16 offset, UINT8 dta)
+{
+	memory.RAM.video[0x0400 + (offset & 0x0bff)] = dta;
+   bprintf(PRINT_NORMAL, _T("\rBoscoWrClr1 %x:%x\n"), (offset & 0x0bff), dta);
+}
+
+static void bosco_vh_latch_w(UINT16 offset, UINT8 dta)
+{
+   // flipscreen
+   machine.flipScreen = dta & 1;
+   bprintf(PRINT_NORMAL, _T("\rBoscoWrFlp %x:%x\n"), offset, dta);
+
+}
+
+static void boscoWDogWrite(UINT16 offset, UINT8 dta)
+{
+   (void)offset;
+   (void)dta;
+}
+
+static UINT8 boscoCustomICsReadDta(UINT16 offset)
+{
+	UINT8 retVal = 0xff;
+
+   if (0x91 == boscoCustomIC2.n06xx.customCommand)
+   {
+      switch (offset)
+      {
+         case 2:
+            retVal = memory.RAM.shared1[0x89cc - 0x7800];
+         break;
+         
+         case 0:
+         case 1:
+         case 3:
+            retVal = 0;
+         break;
+         
+         default:
+            retVal = 0xff;
+         break;
+      }
+   }
+   
+bprintf(PRINT_NORMAL, _T("\rCustom2 D Rd: %x:%x\n"), offset, retVal);
+
+	return retVal;
+}
+
+static void boscoCustomICsWriteDta(UINT16 offset, UINT8 dta)
+{
+bprintf(PRINT_NORMAL, _T("\rCustom2 D Wr: %x:%x\n"), offset, dta);
+
+	boscoCustomIC2.n06xx.buffer[offset & 0x0f] = dta;
+}
+
+static UINT8 boscoCustomICsReadCmd(UINT16 offset)
+{
+bprintf(PRINT_NORMAL, _T("\rCustom2 C Rd: %x:%x\n"), offset, boscoCustomIC2.n06xx.customCommand);
+
+	return boscoCustomIC2.n06xx.customCommand;
+}
+
+static void boscoCustomICsWriteCmd(UINT16 offset, UINT8 dta)
+{
+	boscoCustomIC2.n06xx.customCommand = dta;
+   boscoCustomIC2.n06xx.CPUFireNMI = 1;
+
+	switch (boscoCustomIC2.n06xx.customCommand)
+	{
+		case 0x10:
+			{
+				boscoCustomIC2.n06xx.CPUFireNMI = 0;
+			}
+			break;
+
+		default:
+			break;
+	}
+   
+bprintf(PRINT_NORMAL, _T("\rCustom2 C Wr: %x:%x\n"), offset, dta);
+
+}
+
+static void boscoZ80WriteCPUReset(UINT16 offset, UINT8 dta)
+{
+   memset((UINT8*)&boscoCustomIC2, 0, sizeof(boscoCustomIC2));
+   
+   namcoZ80WriteCPUReset(offset, dta);
+}
+
+#define BOSCO_3BIT_PALETTE_SIZE   32
+#define BOSCO_2BIT_PALETTE_SIZE   64
+
+static void boscoCalcPalette(void)
+{
+	UINT32 palette3Bit[BOSCO_3BIT_PALETTE_SIZE];
+
+	for (INT32 i = 0; i < BOSCO_3BIT_PALETTE_SIZE; i ++)
+	{
+		INT32 r = Colour3Bit[(memory.PROM.palette[(BOSCO_3BIT_PALETTE_SIZE - 1) - i] >> 0) & 0x07];
+		INT32 g = Colour3Bit[(memory.PROM.palette[(BOSCO_3BIT_PALETTE_SIZE - 1) - i] >> 3) & 0x07];
+		INT32 b = Colour3Bit[(memory.PROM.palette[(BOSCO_3BIT_PALETTE_SIZE - 1) - i] >> 5) & 0x06];
+
+		palette3Bit[i] = BurnHighCol(r, g, b, 0);
+	}
+
+	for (INT32 i = 0; i < BOSCO_PALETTE_SIZE_CHARS * (1 << BOSCO_NUM_OF_CHAR_PALETTE_BITS); i ++)
+	{
+		graphics.palette[BOSCO_PALETTE_OFFSET_CHARS + i] =
+			palette3Bit[15 - (memory.PROM.charLookup[i] & 0x0f)];
+	}
+
+	for (INT32 i = 0; i < BOSCO_PALETTE_SIZE_SPRITES * (1 << BOSCO_NUM_OF_SPRITE_PALETTE_BITS); i ++)
+	{
+      UINT8 code = 15 - ((memory.PROM.charLookup[i]) & 0x0f);
+      if (0 == code)
+         graphics.palette[BOSCO_PALETTE_OFFSET_SPRITE + i] = 0;
+      else
+         graphics.palette[BOSCO_PALETTE_OFFSET_SPRITE + i] = 
+            palette3Bit[code + 0x10];
+	}
+
+	UINT32 palette2Bit[BOSCO_2BIT_PALETTE_SIZE];
+
+	for (INT32 i = 0; i < BOSCO_2BIT_PALETTE_SIZE; i ++)
+	{
+		INT32 r = Colour2Bit[(i >> 0) & 0x03];
+		INT32 g = Colour2Bit[(i >> 2) & 0x03];
+		INT32 b = Colour2Bit[(i >> 4) & 0x03];
+
+		palette2Bit[i] = BurnHighCol(r, g, b, 0);
+	}
+
+	for (INT32 i = 0; i < BOSCO_PALETTE_SIZE_BGTILES * (1 << BOSCO_NUM_OF_BGTILE_PALETTE_BITS); i ++)
+	{
+		graphics.palette[BOSCO_PALETTE_OFFSET_BGTILES + i] =
+			palette2Bit[i];
+	}
+}
+
+static UINT32 boscoFrmCnt = 0;
+
+static void boscoRenderTiles0(void)
+{
+	GenericTilemapSetEnable(0, 1);
+	GenericTilemapDraw(0, pTransDraw, 0 | TMAP_DRAWOPAQUE);
+   
+   if (0 == (++boscoFrmCnt % 60)) bprintf(PRINT_NORMAL, _T("Frame: %6d\n\r"), boscoFrmCnt);
+   
+}
+
+/*
+static UINT32 boscoGetSpriteParams(struct Namco_Sprite_Params *spriteParams, UINT32 offset)
+{
+	UINT8 *spriteRam2 = memory.RAM.shared1 + 0x780;
+	UINT8 *spriteRam3 = memory.RAM.shared2 + 0x780;
+	UINT8 *spriteRam1 = memory.RAM.shared3 + 0x780;
+
+	if (0 == (spriteRam1[offset + 1] & 0x40))
+	{
+		INT32 sprite =      spriteRam1[offset + 0];
+
+		if (spriteRam3[offset + 0] & 0x80)
+		{
+			sprite &= 0x3f;
+			sprite += 0x100;
+		}
+		spriteParams->sprite = sprite;
+		spriteParams->colour = spriteRam1[offset + 1] & 0x7f;
+
+		spriteParams->xStart = ((spriteRam2[offset + 1] - 40) + (spriteRam3[offset + 1] & 1 ) * 0x100);
+		spriteParams->yStart = NAMCO_SCREEN_WIDTH - (spriteRam2[offset + 0] - 1);
+		spriteParams->xStep = 16;
+		spriteParams->yStep = 16;
+
+		spriteParams->flags = ((spriteRam3[offset + 0] & 0x03) << 2) |
+			((spriteRam3[offset + 0] & 0x0c) >> 2);
+
+		if (spriteParams->flags & ySize)
+		{
+			spriteParams->yStart -= 16;
+		}
+
+		spriteParams->paletteBits = XEVIOUS_NUM_OF_SPRITE_PALETTE_BITS;
+		spriteParams->paletteOffset = XEVIOUS_PALETTE_OFFSET_SPRITE;
+
+		return 1;
+	}
+
+	return 0;
+}
+
+*/
+
+static INT32 boscoScan(INT32 nAction, INT32 *pnMin)
+{
+	if (nAction & ACB_DRIVER_DATA) {
+ 		SCAN_VAR(boscoCustomIC2.n06xx.CPUFireNMI);
+	}
+
+	return DrvScan(nAction, pnMin);
+}
+
+struct BurnDriver BurnDrvBosconian =
+{
+	/* filename of zip without extension = */    "bosco",
+	/* filename of parent, no extension = */     NULL,
+	/* filename of board ROMs = */               NULL,
+	/* filename of samples ZIP = */              NULL,
+	/* date = */                                 "1982",
+	/* FullName = */                             "Bosconian (Namco)\0",
+	/* Comment = */                              NULL,
+	/* Manufacturer = */                         "Namco",
+	/* System = */                               "Miscellaneous",
+	/* FullName = */                             NULL,
+	/* Comment = */                              NULL,
+	/* Manufacturer = */                         NULL,
+	/* System = */                               NULL,
+	/* Flags = */                                BDF_GAME_WORKING |
+	BDF_ORIENTATION_VERTICAL |
+	BDF_ORIENTATION_FLIPPED |
+	BDF_HISCORE_SUPPORTED,
+	/* No of Players = */                        2,
+	/* Hardware Type = */                        HARDWARE_MISC_PRE90S,
+	/* Genre = */                                GBF_VERSHOOT,
+	/* Family = */                               0,
+	/* GetZipName func = */                      NULL,
+	/* GetROMInfo func = */                      BoscoRomInfo,
+	/* GetROMName func = */                      BoscoRomName,
+	/* GetHDDInfo func = */                      NULL,
+	/* GetHDDName func = */                      NULL,
+	/* GetSampleInfo func = */                   NULL,
+	/* GetSampleName func = */                   NULL,
+	/* GetInputInfo func = */                    BoscoInputInfo,
+	/* GetDIPInfo func = */                      BoscoDIPInfo,
+	/* Init func = */                            boscoInit,
+	/* Exit func = */                            DrvExit,
+	/* Frame func = */                           DrvFrame,
+	/* Redraw func = */                          DrvDraw,
+	/* Areascan func = */                        boscoScan,
+	/* Recalc Palette = */                       NULL,
+	/* Palette Entries count = */                BOSCO_PALETTE_SIZE,
+	/* Width, Height = */   	                  NAMCO_SCREEN_WIDTH, NAMCO_SCREEN_HEIGHT,
+	/* xAspect, yAspect = */   	               3, 4
+};
+
+struct BurnDriver BurnDrvBosconianM =
+{
+	/* filename of zip without extension = */    "boscomd",
+	/* filename of parent, no extension = */     "bosco",
+	/* filename of board ROMs = */               NULL,
+	/* filename of samples ZIP = */              NULL,
+	/* date = */                                 "1982",
+	/* FullName = */                             "Bosconian (Midway)\0",
+	/* Comment = */                              NULL,
+	/* Manufacturer = */                         "Namco / Midway",
+	/* System = */                               "Miscellaneous",
+	/* FullName = */                             NULL,
+	/* Comment = */                              NULL,
+	/* Manufacturer = */                         NULL,
+	/* System = */                               NULL,
+	/* Flags = */                                BDF_GAME_WORKING |
+	BDF_ORIENTATION_VERTICAL,
+	/* No of Players = */                        2,
+	/* Hardware Type = */                        HARDWARE_MISC_PRE90S,
+	/* Genre = */                                GBF_VERSHOOT,
+	/* Family = */                               0,
+	/* GetZipName func = */                      NULL,
+	/* GetROMInfo func = */                      BoscoMDRomInfo,
+	/* GetROMName func = */                      BoscoMDRomName,
+	/* GetHDDInfo func = */                      NULL,
+	/* GetHDDName func = */                      NULL,
+	/* GetSampleInfo func = */                   NULL,
+	/* GetSampleName func = */                   NULL,
+	/* GetInputInfo func = */                    BoscoInputInfo,
+	/* GetDIPInfo func = */                      BoscoDIPInfo,
+	/* Init func = */                            boscoInit,
+	/* Exit func = */                            DrvExit,
+	/* Frame func = */                           DrvFrame,
+	/* Redraw func = */                          DrvDraw,
+	/* Areascan func = */                        boscoScan,
+	/* Recalc Palette = */                       NULL,
+	/* Palette Entries count = */                BOSCO_PALETTE_SIZE,
 	/* Width, Height = */   	                  NAMCO_SCREEN_WIDTH, NAMCO_SCREEN_HEIGHT,
 	/* xAspect, yAspect = */   	               3, 4
 };
